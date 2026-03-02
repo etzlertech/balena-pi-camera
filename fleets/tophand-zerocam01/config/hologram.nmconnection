@@ -1,0 +1,20 @@
+# Hologram GSM connection for Quectel BG95-M3
+# Place in /system-connections/ on balenaOS boot partition
+# Or configure via NetworkManager D-Bus API from container
+
+[connection]
+id=hologram
+type=gsm
+autoconnect=true
+
+[gsm]
+apn=hologram
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
+
+[proxy]

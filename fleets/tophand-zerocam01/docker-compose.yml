@@ -5,16 +5,13 @@ services:
     build: ./camera-service
     privileged: true
     restart: always
+    network_mode: host
     labels:
       io.balena.features.kernel-modules: '1'
       io.balena.features.firmware: '1'
       io.balena.features.dbus: '1'
-    devices:
-      - "/dev/video0:/dev/video0"
-      - "/dev/vchiq:/dev/vchiq"
-      - "/dev/media0:/dev/media0"
-      - "/dev/media1:/dev/media1"
-      - "/dev/media2:/dev/media2"
+      io.balena.features.supervisor-api: '1'
+      io.balena.update.strategy: kill-then-download
     volumes:
       - 'captured_images:/data/images'
       - 'uploaded_archive:/data/archive'
@@ -25,6 +22,7 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY}
       - SUPABASE_BUCKET=${SUPABASE_BUCKET:-pi-zero-images}
       - DEVICE_NAME=${BALENA_DEVICE_NAME_AT_INIT}
+      - UDEV=on
 
 volumes:
   captured_images:

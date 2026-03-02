@@ -1,5 +1,6 @@
-# Pi Zero 2 W + IMX708 Camera Configuration
-# Place in /mnt/boot/config.txt or use balena config inject
+# Pi Zero 2 W + IMX708 + BG95-M3 Configuration
+# Matches working config from tophand-zero-04
+# Apply via balena config vars: BALENA_HOST_CONFIG_<key>
 
 # Enable I2C (required for camera)
 dtparam=i2c_arm=on
@@ -7,10 +8,10 @@ dtparam=i2c_arm=on
 # Audio (optional)
 dtparam=audio=on
 
-# IMPORTANT: Disable auto-detect for IMX708 reliability
-camera_auto_detect=0
+# Camera auto-detect (works on pi-zero-04 with IMX708)
+camera_auto_detect=1
 
-# Display auto-detect (leave enabled)
+# Display auto-detect
 display_auto_detect=1
 
 # Standard Pi settings
@@ -22,6 +23,9 @@ arm_64bit=1
 disable_overscan=1
 arm_boost=1
 
+[cm4]
+otg_mode=1
+
 [cm5]
 dtoverlay=dwc2,dr_mode=host
 
@@ -30,7 +34,3 @@ enable_uart=1
 
 # IMX708 Camera Module 3 overlay
 dtoverlay=imx708
-
-# For Multi-Camera Adapter V2.2 (uncomment if using):
-# camera_auto_detect=0
-# dtoverlay=camera-mux-4port,cam0-imx708
