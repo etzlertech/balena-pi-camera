@@ -1,0 +1,36 @@
+# Pi Zero 2 W + IMX708 Camera Configuration
+# Place in /mnt/boot/config.txt or use balena config inject
+
+# Enable I2C (required for camera)
+dtparam=i2c_arm=on
+
+# Audio (optional)
+dtparam=audio=on
+
+# IMPORTANT: Disable auto-detect for IMX708 reliability
+camera_auto_detect=0
+
+# Display auto-detect (leave enabled)
+display_auto_detect=1
+
+# Standard Pi settings
+auto_initramfs=1
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+disable_fw_kms_setup=1
+arm_64bit=1
+disable_overscan=1
+arm_boost=1
+
+[cm5]
+dtoverlay=dwc2,dr_mode=host
+
+[all]
+enable_uart=1
+
+# IMX708 Camera Module 3 overlay
+dtoverlay=imx708
+
+# For Multi-Camera Adapter V2.2 (uncomment if using):
+# camera_auto_detect=0
+# dtoverlay=camera-mux-4port,cam0-imx708

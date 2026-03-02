@@ -1,0 +1,24 @@
+name: pi-trail-camera
+type: sw.application
+version: "1.0.0"
+description: >-
+  Trail camera fleet for Raspberry Pi Zero 2 W with IMX708 camera.
+  Captures images at configurable intervals and uploads to Supabase.
+
+assets:
+  repository:
+    type: blob.asset
+    data:
+      url: 'https://github.com/etzlertech/balena-pi-camera'
+
+data:
+  applicationEnvironmentVariables:
+    - CAPTURE_INTERVAL: '300'
+    - IMAGE_RESOLUTION: '2304x1296'
+    - SUPABASE_BUCKET: 'pi-zero-images'
+  
+  defaultDeviceType: raspberrypi3-64
+  supportedDeviceTypes:
+    - raspberrypi3-64
+    - raspberrypizero2-64
+    - raspberry-pi2
