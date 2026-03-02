@@ -184,6 +184,35 @@ FROM balenalib/raspberrypi3-64-debian:bookworm-run
 COPY --from=builder /app /app
 ```
 
+### Dockerfile Resolution Priority
+
+When multiple Dockerfiles exist, balena picks the most specific:
+
+1. `docker-compose.yml` (multicontainer — uses `build:` path)
+2. `Dockerfile.<device-type>` (e.g., `Dockerfile.raspberrypi3`)
+3. `Dockerfile.<arch>` (e.g., `Dockerfile.aarch64`)
+4. `Dockerfile.template`
+5. `Dockerfile`
+6. `package.json` (Node.js auto-build)
+
+### Additional Template Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `%%BALENA_APP_NAME%%` | Fleet name | `tophand-zerocam01` |
+| `%%BALENA_RELEASE_HASH%%` | Release commit hash | `abc123def456` |
+| `%%BALENA_SERVICE_NAME%%` | Service name from docker-compose | `camera` |
+
+**Caveat**: `%%BALENA_MACHINE_NAME%%` does NOT work correctly when a fleet contains multiple device types (services build once for all). Use `%%BALENA_ARCH%%` instead.
+
+### install_packages Utility
+
+Every balenalib image includes `install_packages` which abstracts package managers, auto-cleans metadata, and retries on failure:
+
+```dockerfile
+RUN install_packages python3 curl i2c-tools
+```
+
 ### Best Practices
 
 - Always clean up apt caches: `apt-get clean && rm -rf /var/lib/apt/lists/*`
@@ -191,6 +220,13 @@ COPY --from=builder /app /app
 - Pin package versions for reproducibility
 - Use `.dockerignore` to exclude unnecessary files
 - For Pi Zero (armv6): use `raspberry-pi` or `raspberrypi0-2w-64` device types
+- For RPi-specific packages (rpicam-apps, libcamera), add the Raspberry Pi apt repo:
+  ```dockerfile
+  RUN wget -qO - http://archive.raspberrypi.com/debian/raspberrypi.gpg.key | \
+      gpg --dearmor -o /usr/share/keyrings/raspberrypi-archive-keyring.gpg \
+      && echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.gpg] \
+      http://archive.raspberrypi.com/debian/ bookworm main" > /etc/apt/sources.list.d/raspi.list
+  ```
 
 ---
 
@@ -289,7 +325,27 @@ data:
   supportedDeviceTypes:
     - raspberrypi3-64
     - raspberrypizero2-64
+
+# Build-time secrets (mounted at /run/secrets/ during build only)
+build-secrets:
+  global:
+    - source: my-secret-file        # File in .balena/secrets/
+      dest: my-secret               # Mounted as /run/secrets/my-secret
+  services:
+    camera:
+      - source: camera-key
+        dest: api-key
+
+# Build-time variables (accessible via Dockerfile ARG)
+build-variables:
+  global:
+    - MY_VAR=value
+  services:
+    camera:
+      - CAMERA_VAR=value
 ```
+
+**Security note**: Build variables are visible in Docker history. Use build-secrets for sensitive data.
 
 ---
 
@@ -504,6 +560,31 @@ dns=8.8.8.8;8.8.4.4;
 
 Allowlist: `*.balena-cloud.com`
 
+### WiFi Connect (Captive Portal)
+
+balena's WiFi Connect project creates an AP with a captive portal for end-users to enter WiFi credentials. Useful for field deployment where WiFi config changes.
+
+Requires `network_mode: host` and `io.balena.features.dbus` label. Key env vars:
+- `PORTAL_SSID` - AP name (default: "WiFi Connect")
+- `PORTAL_PASSPHRASE` - AP password
+- `CHECK_CONN_FREQ` - Connection check frequency (default: 120s)
+
+### Hotspot Mode
+
+```ini
+[connection]
+id=balena-hotspot
+type=wifi
+[wifi]
+mode=ap
+ssid=MyDevice-AP
+[wifi-security]
+key-mgmt=wpa-psk
+psk=my-ap-password
+[ipv4]
+method=shared
+```
+
 ---
 
 ## Cellular Connectivity
@@ -665,38 +746,75 @@ tmpfs:
 
 The Supervisor exposes a local HTTP API on each device. Access requires the `io.balena.features.supervisor-api` label.
 
-### Common Endpoints
+### Health & Diagnostics
 
 ```bash
-# Inside a container:
+curl "$BALENA_SUPERVISOR_ADDRESS/ping"                                          # No auth needed, returns "OK"
+curl "$BALENA_SUPERVISOR_ADDRESS/v1/healthy"                                    # 200 or 500
+curl "$BALENA_SUPERVISOR_ADDRESS/v2/version?apikey=$BALENA_SUPERVISOR_API_KEY"  # Supervisor version
+```
+
+### Device Info & Control
+
+```bash
+# Device state (status, IP, OS version, update info)
 curl "$BALENA_SUPERVISOR_ADDRESS/v1/device?apikey=$BALENA_SUPERVISOR_API_KEY"
 
-# Device info
-GET /v1/device
+# Device name
+curl "$BALENA_SUPERVISOR_ADDRESS/v2/device/name?apikey=$BALENA_SUPERVISOR_API_KEY"
 
-# Restart service
-POST /v2/applications/$BALENA_APP_ID/restart-service
-Body: {"serviceName": "camera"}
+# Reboot / Shutdown / Blink LED
+curl -X POST "$BALENA_SUPERVISOR_ADDRESS/v1/reboot?apikey=$BALENA_SUPERVISOR_API_KEY"
+curl -X POST "$BALENA_SUPERVISOR_ADDRESS/v1/shutdown?apikey=$BALENA_SUPERVISOR_API_KEY"
+curl -X POST "$BALENA_SUPERVISOR_ADDRESS/v1/blink?apikey=$BALENA_SUPERVISOR_API_KEY"
 
-# Reboot device
-POST /v1/reboot
+# Force update check (overrides locks)
+curl -X POST --data '{"force":true}' "$BALENA_SUPERVISOR_ADDRESS/v1/update?apikey=$BALENA_SUPERVISOR_API_KEY"
+```
 
-# Shutdown
-POST /v1/shutdown
+### Service Management (v2 - Multi-Container)
 
-# Purge application data
-POST /v1/purge
-Body: {"appId": $BALENA_APP_ID}
+```bash
+# Restart / Stop / Start specific service
+curl -X POST -H "Content-Type:application/json" \
+  --data '{"serviceName":"camera"}' \
+  "$BALENA_SUPERVISOR_ADDRESS/v2/applications/$BALENA_APP_ID/restart-service?apikey=$BALENA_SUPERVISOR_API_KEY"
+
+# Restart ALL services
+curl -X POST "$BALENA_SUPERVISOR_ADDRESS/v2/applications/$BALENA_APP_ID/restart?apikey=$BALENA_SUPERVISOR_API_KEY"
 
 # Application state
-GET /v2/applications/state
+curl "$BALENA_SUPERVISOR_ADDRESS/v2/applications/state?apikey=$BALENA_SUPERVISOR_API_KEY"
 
-# Device state
-GET /v2/state/status
+# Overall device status with download progress
+curl "$BALENA_SUPERVISOR_ADDRESS/v2/state/status?apikey=$BALENA_SUPERVISOR_API_KEY"
+```
 
-# Force update check
-POST /v1/update
-Body: {"force": true}  # Overrides update locks
+### Data & Host Config
+
+```bash
+# Purge /data and volumes
+curl -X POST --data '{"appId":<appId>}' "$BALENA_SUPERVISOR_ADDRESS/v1/purge?apikey=$BALENA_SUPERVISOR_API_KEY"
+
+# Get/set hostname and proxy
+curl "$BALENA_SUPERVISOR_ADDRESS/v1/device/host-config?apikey=$BALENA_SUPERVISOR_API_KEY"
+curl -X PATCH --data '{"network":{"hostname":"newhostname"}}' \
+  "$BALENA_SUPERVISOR_ADDRESS/v1/device/host-config?apikey=$BALENA_SUPERVISOR_API_KEY"
+
+# Regenerate API key (invalidates current, returns new)
+curl -X POST "$BALENA_SUPERVISOR_ADDRESS/v1/regenerate-api-key?apikey=$BALENA_SUPERVISOR_API_KEY"
+```
+
+### D-Bus Host OS Communication
+
+For communicating with host systemd from containers (requires `io.balena.features.dbus` label):
+
+```bash
+export DBUS_SYSTEM_BUS_ADDRESS=unix:path=/host/run/dbus/system_bus_socket
+dbus-send --system --print-reply \
+  --dest=org.freedesktop.systemd1 \
+  /org/freedesktop/systemd1 \
+  org.freedesktop.systemd1.Manager.Reboot
 ```
 
 ---
@@ -770,12 +888,23 @@ balena tunnel <UUID> -p 22222:22222  # Direct tunnel
 - **API keys**: Long-lived, created in dashboard Preferences > Access tokens
 - **Device API keys**: Auto-generated per device, used by supervisor
 
+### Production vs Development Images
+
+| Feature | Development | Production |
+|---------|------------|------------|
+| Root SSH | Unauthenticated (open) | Key-based auth only |
+| Serial console | Enabled | Disabled |
+| Local mode | Immediately available | Must enable via dashboard |
+| Security | NOT safe for public internet | Hardened for deployment |
+
 ### Best Practices
 
 - Use fleet environment variables for secrets (not hardcoded in Dockerfiles)
 - Use production images for deployed devices
 - Rotate API keys regularly
 - Use device-level vars for device-specific secrets
+- Use `.balena/secrets/` for build-time secrets, add `.balena` to `.gitignore`
+- Use `balena api-key generate` with expiry dates for CI/CD
 
 ---
 
