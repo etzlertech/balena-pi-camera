@@ -1,9 +1,10 @@
-name: pi-trail-camera
+name: tophand-zerocam01
 type: sw.application
 version: "1.0.0"
 description: >-
-  Trail camera fleet for Raspberry Pi Zero 2 W with IMX708 camera.
+  Single-camera trail cam fleet. Pi Zero 2 W + IMX708 Camera Module 3.
   Captures images at configurable intervals and uploads to Supabase.
+  Future: Quectel BG95 LTE-M modem for cellular connectivity.
 
 assets:
   repository:
