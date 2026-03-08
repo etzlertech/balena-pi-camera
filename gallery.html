@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trail Camera - tophand-zero-04</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a1a;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 10px;
+        }
+        h1 {
+            text-align: center;
+            padding: 20px 0;
+            font-size: 24px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 20px;
+        }
+        .info {
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .gallery {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .image-container {
+            margin-bottom: 20px;
+            background: #222;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .image-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .image-info {
+            padding: 12px;
+            font-size: 13px;
+            color: #aaa;
+            border-top: 1px solid #333;
+        }
+        .timestamp {
+            font-weight: bold;
+            color: #4a9eff;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #ff4444;
+        }
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+            z-index: 100;
+        }
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <h1>🐄 Trail Camera Gallery</h1>
+    <div class="info">tophand-zero-04 • Latest captures</div>
+
+    <div class="gallery" id="gallery">
+        <div class="loading">Loading images...</div>
+    </div>
+
+    <button class="refresh-btn" onclick="loadGallery()" title="Refresh">⟳</button>
+
+    <script>
+        async function loadGallery() {
+            const gallery = document.getElementById('gallery');
+
+            try {
+                gallery.innerHTML = '<div class="loading">Loading images...</div>';
+
+                const response = await fetch('/images');
+                if (!response.ok) throw new Error('Failed to load images');
+
+                const images = await response.json();
+
+                if (images.length === 0) {
+                    gallery.innerHTML = '<div class="info">No images captured yet. First capture at next scheduled time.</div>';
+                    return;
+                }
+
+                gallery.innerHTML = '';
+
+                // Sort images by timestamp (newest first)
+                images.sort().reverse().forEach(filename => {
+                    // Parse timestamp from filename: tophand-zero-04_YYYYMMDD_HHMMSS.jpg
+                    const match = filename.match(/_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+                    let timestamp = 'Unknown';
+                    if (match) {
+                        const [_, year, month, day, hour, min, sec] = match;
+                        timestamp = `${month}/${day}/${year} ${hour}:${min}:${sec}`;
+                    }
+
+                    const container = document.createElement('div');
+                    container.className = 'image-container';
+                    container.innerHTML = `
+                        <img src="/gallery/${filename}" alt="${filename}" loading="lazy">
+                        <div class="image-info">
+                            <div class="timestamp">${timestamp}</div>
+                            <div>${filename}</div>
+                        </div>
+                    `;
+                    gallery.appendChild(container);
+                });
+
+            } catch (error) {
+                gallery.innerHTML = `<div class="error">Error loading gallery: ${error.message}</div>`;
+                console.error('Gallery error:', error);
+            }
+        }
+
+        // Load gallery on page load
+        loadGallery();
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadGallery, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
