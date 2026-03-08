@@ -80,7 +80,7 @@
 - **Unreliable in remote field deployment**
 - **WiFi hotspot UNAVAILABLE during sleep**
 
-**Status:** Not recommended for trail camera
+**Status:** Not recommended for ranch camera
 
 ---
 
@@ -179,7 +179,7 @@ Keep Pi awake but reduce power between captures:
 
 ## Bottom Line
 
-**For trail camera in pasture:**
+**For ranch camera in pasture:**
 - ✅ Always-on is simplest and most reliable
 - ✅ WiFi hotspot always accessible
 - ⚠️ Add solar panel or larger battery for extended runtime

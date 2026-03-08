@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Trail Camera Capture & Upload Service
+Ranch Camera Capture & Upload Service
 For Pi Zero with IMX708 Camera - Cellular Optimized with Compression
 """
 
@@ -85,6 +85,7 @@ def capture_image() -> tuple[Path | None, Path | None]:
         '-o', str(filepath_hq),
         '--width', width,
         '--height', height,
+        '--rotation', '180',  # Camera mounted upside down
         '-t', '2000',  # 2 second warmup
         '--nopreview',
     ]
@@ -110,6 +111,7 @@ def capture_image() -> tuple[Path | None, Path | None]:
             '-o', str(filepath_compressed),
             '--width', width,
             '--height', height,
+            '--rotation', '180',  # Camera mounted upside down
             '-q', str(IMAGE_QUALITY),  # Low quality for cellular
             '-t', '2000',
             '--nopreview',
@@ -202,7 +204,7 @@ def cleanup_gallery(max_files: int = 50):
 def main():
     """Main capture loop."""
     logger.info("=" * 50)
-    logger.info("Trail Camera Capture Service")
+    logger.info("Ranch Camera Capture Service")
     logger.info(f"Device: {DEVICE_NAME}")
     logger.info(f"Resolution: {IMAGE_RESOLUTION}")
     logger.info(f"HQ: Full quality saved to SD card")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple HTTP server for trail camera gallery
+Simple HTTP server for ranch camera gallery
 Serves compressed images from /home/pi/camera/gallery
 """
 
@@ -114,7 +114,7 @@ class GalleryHandler(SimpleHTTPRequestHandler):
 def main():
     """Start the HTTP server."""
     logger.info("=" * 50)
-    logger.info("Trail Camera Gallery Server")
+    logger.info("Ranch Camera Gallery Server")
     logger.info(f"Gallery directory: {GALLERY_DIR}")
     logger.info(f"HTML file: {HTML_FILE}")
     logger.info(f"Port: {PORT}")

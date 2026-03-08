@@ -51,11 +51,11 @@ ssh pi-04
 - **Hotspot:** tophand-pizero-04 (wlan0) - 10.42.0.1/24
 - **Tailscale:** VPN (tailscale0) - 100.76.232.7
 
-## Trail Camera Status
+## Ranch Camera Status
 
 ### Check Timer Schedule
 ```bash
-systemctl list-timers trail-camera.timer
+systemctl list-timers ranch-camera.timer
 ```
 
 ### View Recent Captures
@@ -65,14 +65,14 @@ ls -lh /home/pi/camera/archive/
 
 ### Manual Capture Test
 ```bash
-sudo systemctl start trail-camera.service
-journalctl -u trail-camera.service -f
+sudo systemctl start ranch-camera.service
+journalctl -u ranch-camera.service -f
 ```
 
 ### View Logs
 ```bash
-journalctl -u trail-camera.timer -f
-journalctl -u trail-camera.service -n 50
+journalctl -u ranch-camera.timer -f
+journalctl -u ranch-camera.service -n 50
 journalctl -u gallery-server.service -n 50
 ```
 
@@ -124,7 +124,7 @@ sudo nmcli connection up hologram
 
 ### Restart Camera Timer
 ```bash
-sudo systemctl restart trail-camera.timer
+sudo systemctl restart ranch-camera.timer
 ```
 
 ## Power Considerations
