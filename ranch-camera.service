@@ -1,0 +1,33 @@
+[Unit]
+Description=Ranch Camera Capture Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /home/pi/capture_upload.py
+
+# Supabase Configuration
+Environment="SUPABASE_URL=https://dtzayqhebbrbvordmabh.supabase.co"
+Environment="SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMTg5NzE1NCwiZXhwIjoyMDQ3NDczMTU0fQ.q1r7h0aCaUbZS3FSVSIwjw_mv46pbps"
+Environment="SUPABASE_BUCKET=spypoint-images"
+
+# Camera Configuration
+Environment="DEVICE_NAME=tophand-zero-04"
+Environment="IMAGE_WIDTH=2304"
+Environment="IMAGE_HEIGHT=1296"
+Environment="IMAGE_QUALITY=10"
+
+# Directory Configuration
+Environment="IMAGE_DIR=/home/pi/camera/images"
+Environment="ARCHIVE_DIR=/home/pi/camera/archive"
+Environment="GALLERY_DIR=/home/pi/camera/gallery"
+
+# Restart policy
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

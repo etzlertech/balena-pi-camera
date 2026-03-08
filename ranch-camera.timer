@@ -1,0 +1,11 @@
+[Unit]
+Description=Ranch Camera Capture Timer
+Requires=ranch-camera.service
+
+[Timer]
+# Run hourly during active hours (5am-10pm)
+OnCalendar=05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
