@@ -282,8 +282,9 @@
 
             for (const item of data) {
                 if (item.id === null) {
-                    // It's a folder - skip thumbnail folders
-                    if (!item.name.toLowerCase().includes('thumb')) {
+                    // It's a folder - skip thumbnail and hd folders
+                    const folderName = item.name.toLowerCase();
+                    if (!folderName.includes('thumb') && folderName !== 'hd') {
                         const subPath = path ? `${path}/${item.name}` : item.name;
                         const subFiles = await listAllFiles(prefix, subPath);
                         files.push(...subFiles);
