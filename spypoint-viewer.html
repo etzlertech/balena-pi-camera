@@ -201,17 +201,19 @@
         function parseDateFromFilename(filename) {
             // Parse date from Spypoint filename format: PICTXXXX_S_YYYYMMDDHHMM...
             // Example: PICT3818_S_202603081302zLK0k.jpg -> 2026-03-08 13:02
+            // NOTE: Camera times are in LOCAL time (Central), not UTC
             const match = filename.match(/_S?_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
             if (match) {
                 const [, year, month, day, hour, minute] = match;
-                return new Date(`${year}-${month}-${day}T${hour}:${minute}:00Z`);
+                // Parse as local time (no 'Z' suffix) so browser interprets it correctly
+                return new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
             }
 
             // Fallback: try without _S suffix
             const match2 = filename.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
             if (match2) {
                 const [, year, month, day, hour, minute] = match2;
-                return new Date(`${year}-${month}-${day}T${hour}:${minute}:00Z`);
+                return new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
             }
 
             return null;
