@@ -198,6 +198,25 @@
         let allImages = [];
         let devices = new Set();
 
+        // Friendly camera names mapping
+        const cameraNames = {
+            'FLEX-M-MGE4': 'Pastucha Hay',
+            'FLEX-M-NGEF': 'Back Yard',
+            'FLEX-M-RJQM': 'Ainsworth Gate',
+            'FLEX-S-DARK-RJQH': 'Cattle Pen',
+            'QC': 'Pastucha Pond',
+            'QN': 'Donna Trough 1',
+            'YV': 'Donna Trough 2'
+        };
+
+        // Devices to exclude from viewer
+        const excludedDevices = ['Untitled folder', 'test'];
+
+        // Get friendly name or return original
+        function getFriendlyName(deviceName) {
+            return cameraNames[deviceName] || deviceName;
+        }
+
         function parseDateFromFilename(filename) {
             // Parse date from Spypoint filename format: PICTXXXX_S_YYYYMMDDHHMM...
             // Example: PICT3818_S_202603081302zLK0k.jpg -> 2026-03-08 13:02
@@ -244,6 +263,12 @@
                 for (const item of data) {
                     if (item.id === null) { // It's a folder
                         const deviceName = item.name;
+
+                        // Skip excluded devices
+                        if (excludedDevices.includes(deviceName)) {
+                            continue;
+                        }
+
                         devices.add(deviceName);
 
                         // List all files recursively in this device folder
@@ -326,7 +351,7 @@
             Array.from(devices).sort().forEach(device => {
                 const option = document.createElement('option');
                 option.value = device;
-                option.textContent = device;
+                option.textContent = getFriendlyName(device);
                 filter.appendChild(option);
             });
 
@@ -385,7 +410,7 @@
                 <div class="image-info">
                     <div class="image-name">${image.name}</div>
                     <div class="image-meta">${formattedDate}</div>
-                    <span class="device-tag">${image.device}</span>
+                    <span class="device-tag">${getFriendlyName(image.device)}</span>
                 </div>
             `;
 
