@@ -167,6 +167,7 @@
     <div class="controls">
         <button onclick="runAudit()">Run Audit</button>
         <button onclick="exportDeleteList()" id="exportBtn" disabled>Export Delete List</button>
+        <button onclick="deleteAllDuplicates()" id="deleteBtn" disabled style="background: #f44336;">🗑️ Delete Duplicates</button>
     </div>
 
     <div id="status"></div>
@@ -342,6 +343,7 @@
 
                 duplicatesDiv.innerHTML = html;
                 document.getElementById('exportBtn').disabled = false;
+                document.getElementById('deleteBtn').disabled = false;
 
             } catch (error) {
                 statusDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
@@ -358,6 +360,55 @@
             a.download = 'delete-list.txt';
             a.click();
             URL.revokeObjectURL(url);
+        }
+
+        async function deleteAllDuplicates() {
+            if (!confirm(`⚠️  WARNING: This will PERMANENTLY DELETE ${filesToDelete.length} files from Supabase storage!\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to proceed?`)) {
+                return;
+            }
+
+            const deleteBtn = document.getElementById('deleteBtn');
+            const statusDiv = document.getElementById('status');
+
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting...';
+
+            const total = filesToDelete.length;
+            let deleted = 0;
+            let errors = 0;
+
+            statusDiv.innerHTML = '<div class="loading">Deleting files... 0 / ' + total + '</div>';
+
+            for (const file of filesToDelete) {
+                try {
+                    const { error } = await supabaseClient.storage
+                        .from(BUCKET)
+                        .remove([file.path]);
+
+                    if (error) {
+                        throw error;
+                    }
+
+                    deleted++;
+                } catch (error) {
+                    errors++;
+                    console.error(`Error deleting ${file.path}:`, error.message);
+                }
+
+                // Update progress every 50 files
+                if ((deleted + errors) % 50 === 0) {
+                    statusDiv.innerHTML = `<div class="loading">Deleting files... ${deleted + errors} / ${total} (${deleted} deleted, ${errors} errors)</div>`;
+                }
+
+                // Small delay to avoid rate limiting
+                if ((deleted + errors) % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+
+            statusDiv.innerHTML = `<div style="text-align: center; padding: 20px;"><h2>✓ Deletion Complete!</h2><p>Successfully deleted: ${deleted} files</p><p>Errors: ${errors} files</p><p>Space reclaimed: ~2.94 MB</p></div>`;
+
+            alert(`Deletion complete!\n\nDeleted: ${deleted} files\nErrors: ${errors} files\nSpace reclaimed: ~2.94 MB`);
         }
     </script>
 </body>

@@ -33,3 +33,6 @@ logs/
 
 # Balena
 .balena/
+
+# Node
+node_modules/
