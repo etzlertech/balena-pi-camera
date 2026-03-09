@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Storage Audit - Duplicate Files</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            max-width: 1200px;
+            margin: 0 auto 20px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #444;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-weight: bold;
+            color: #888;
+        }
+
+        .stat-value {
+            color: #4CAF50;
+        }
+
+        .duplicates {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .duplicate-set {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .filename {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+
+        .file-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+
+        .keep {
+            background: #1b5e20;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .delete {
+            background: #5e1b1b;
+            border-left: 4px solid #f44336;
+        }
+
+        .file-path {
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        .file-meta {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            text-align: center;
+            padding: 50px;
+            color: #ff6b6b;
+        }
+
+        #output {
+            display: none;
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px auto;
+            max-width: 1200px;
+        }
+
+        #output pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Storage Audit - Duplicate Files</h1>
+        <p>Identify duplicate filenames and mark smaller versions for deletion</p>
+    </div>
+
+    <div class="controls">
+        <button onclick="runAudit()">Run Audit</button>
+        <button onclick="exportDeleteList()" id="exportBtn" disabled>Export Delete List</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="stats"></div>
+    <div id="duplicates"></div>
+    <div id="output"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://dtzayqhebbrbvordmabh.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w';
+        const BUCKET = 'spypoint-images';
+
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let filesToDelete = [];
+
+        async function listAllFiles(prefix, path = '') {
+            const fullPath = path ? `${prefix}/${path}` : prefix;
+            const files = [];
+
+            const { data, error } = await supabaseClient.storage
+                .from(BUCKET)
+                .list(fullPath, {
+                    limit: 1000,
+                    sortBy: { column: 'created_at', order: 'desc' }
+                });
+
+            if (error) {
+                console.error('Error listing files:', error);
+                return files;
+            }
+
+            for (const item of data) {
+                if (item.id === null) {
+                    // It's a folder, recurse
+                    const subPath = path ? `${path}/${item.name}` : item.name;
+                    const subFiles = await listAllFiles(prefix, subPath);
+                    files.push(...subFiles);
+                } else {
+                    // It's a file
+                    const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
+                    files.push({
+                        name: item.name,
+                        path: filePath,
+                        size: item.metadata?.size || 0,
+                        created_at: item.created_at,
+                        device: prefix,
+                        folder: path
+                    });
+                }
+            }
+
+            return files;
+        }
+
+        async function runAudit() {
+            const statusDiv = document.getElementById('status');
+            const statsDiv = document.getElementById('stats');
+            const duplicatesDiv = document.getElementById('duplicates');
+
+            statusDiv.innerHTML = '<div class="loading">Scanning storage...</div>';
+            statsDiv.innerHTML = '';
+            duplicatesDiv.innerHTML = '';
+            filesToDelete = [];
+
+            try {
+                // Get top-level folders (device names)
+                const { data: devices, error } = await supabaseClient.storage
+                    .from(BUCKET)
+                    .list('', {
+                        limit: 1000
+                    });
+
+                if (error) throw error;
+
+                const allFiles = [];
+                for (const device of devices) {
+                    if (device.id === null) { // It's a folder
+                        statusDiv.innerHTML = `<div class="loading">Scanning device: ${device.name}...</div>`;
+                        const files = await listAllFiles(device.name);
+                        allFiles.push(...files);
+                    }
+                }
+
+                statusDiv.innerHTML = '';
+
+                // Group files by filename
+                const filesByName = {};
+                for (const file of allFiles) {
+                    if (!filesByName[file.name]) {
+                        filesByName[file.name] = [];
+                    }
+                    filesByName[file.name].push(file);
+                }
+
+                // Find duplicates
+                const duplicates = {};
+                for (const [filename, files] of Object.entries(filesByName)) {
+                    if (files.length > 1) {
+                        duplicates[filename] = files;
+                    }
+                }
+
+                // Analyze duplicates
+                const toDelete = [];
+                const toKeep = [];
+
+                for (const [filename, files] of Object.entries(duplicates)) {
+                    // Sort by size (largest first)
+                    files.sort((a, b) => b.size - a.size);
+
+                    const largest = files[0];
+                    const smaller = files.slice(1);
+
+                    toKeep.push(largest);
+                    toDelete.push(...smaller);
+                }
+
+                filesToDelete = toDelete;
+
+                // Display stats
+                const totalSpace = toDelete.reduce((sum, f) => sum + f.size, 0);
+                statsDiv.innerHTML = `
+                    <div class="stat-row">
+                        <span class="stat-label">Total files scanned:</span>
+                        <span class="stat-value">${allFiles.length.toLocaleString()}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Duplicate sets found:</span>
+                        <span class="stat-value">${Object.keys(duplicates).length.toLocaleString()}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Files to keep:</span>
+                        <span class="stat-value">${toKeep.length.toLocaleString()}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Files to delete:</span>
+                        <span class="stat-value">${toDelete.length.toLocaleString()}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Space to reclaim:</span>
+                        <span class="stat-value">${(totalSpace / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                `;
+
+                // Display duplicates
+                let html = '';
+                for (const [filename, files] of Object.entries(duplicates)) {
+                    files.sort((a, b) => b.size - a.size);
+                    const largest = files[0];
+                    const smaller = files.slice(1);
+
+                    html += `
+                        <div class="duplicate-set">
+                            <div class="filename">${filename}</div>
+                            <div class="file-item keep">
+                                <div class="file-path">✓ KEEP: ${largest.path}</div>
+                                <div class="file-meta">${(largest.size / 1024).toFixed(1)} KB | Folder: ${largest.folder || 'root'}</div>
+                            </div>
+                    `;
+
+                    for (const file of smaller) {
+                        html += `
+                            <div class="file-item delete">
+                                <div class="file-path">✗ DELETE: ${file.path}</div>
+                                <div class="file-meta">${(file.size / 1024).toFixed(1)} KB | Folder: ${file.folder || 'root'}</div>
+                            </div>
+                        `;
+                    }
+
+                    html += `</div>`;
+                }
+
+                duplicatesDiv.innerHTML = html;
+                document.getElementById('exportBtn').disabled = false;
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                console.error('Error:', error);
+            }
+        }
+
+        function exportDeleteList() {
+            const deleteList = filesToDelete.map(f => f.path).join('\n');
+            const blob = new Blob([deleteList], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'delete-list.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Duplicate Files from Supabase</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: #f44336;
+        }
+
+        .warning {
+            background: #5e1b1b;
+            border: 2px solid #f44336;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .warning h2 {
+            color: #f44336;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-label {
+            display: inline-block;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #2a2a2a;
+            color: #4CAF50;
+            margin: 5px;
+        }
+
+        .file-label:hover {
+            background: #1b5e20;
+            color: white;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+            margin: 5px;
+        }
+
+        button.danger {
+            background: #f44336;
+        }
+
+        button.danger:hover {
+            background: #d32f2f;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .info {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            max-width: 800px;
+            margin: 0 auto 20px;
+        }
+
+        .progress {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 800px;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #444;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .log {
+            background: #1a1a1a;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            margin: 2px 0;
+        }
+
+        .log-success {
+            color: #4CAF50;
+        }
+
+        .log-error {
+            color: #f44336;
+        }
+
+        .log-info {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚠️ Delete Duplicate Files</h1>
+        <p>Permanently remove smaller duplicate files from Supabase storage</p>
+    </div>
+
+    <div class="warning">
+        <h2>⚠️ WARNING - DESTRUCTIVE ACTION</h2>
+        <p>This tool will <strong>permanently delete</strong> files from your Supabase storage bucket.</p>
+        <ul style="margin: 10px 0 0 20px;">
+            <li>Make sure you have exported the delete list from the audit tool</li>
+            <li>Review the delete-list.txt file to verify the files to be deleted</li>
+            <li>This action cannot be undone</li>
+            <li>Consider creating a backup before proceeding</li>
+        </ul>
+    </div>
+
+    <div class="controls">
+        <label for="fileInput" class="file-label">
+            📁 Select delete-list.txt
+        </label>
+        <input type="file" id="fileInput" accept=".txt">
+        <br>
+        <button id="deleteBtn" class="danger" disabled onclick="startDeletion()">
+            🗑️ Delete Files (Irreversible)
+        </button>
+    </div>
+
+    <div id="info" class="info" style="display: none;">
+        <h3>Files to Delete</h3>
+        <p id="fileCount">0 files loaded</p>
+    </div>
+
+    <div id="progress" class="progress">
+        <h3>Deletion Progress</h3>
+        <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <p id="progressText">0 / 0 files deleted</p>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://dtzayqhebbrbvordmabh.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w';
+        const BUCKET = 'spypoint-images';
+
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let filesToDelete = [];
+
+        // File input handler
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const text = await file.text();
+            filesToDelete = text.split('\n').filter(line => line.trim().length > 0);
+
+            document.getElementById('info').style.display = 'block';
+            document.getElementById('fileCount').textContent = `${filesToDelete.length} files loaded`;
+            document.getElementById('deleteBtn').disabled = false;
+
+            log(`Loaded ${filesToDelete.length} files from ${file.name}`, 'info');
+        });
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function startDeletion() {
+            if (!confirm(`Are you absolutely sure you want to delete ${filesToDelete.length} files? This cannot be undone!`)) {
+                return;
+            }
+
+            document.getElementById('deleteBtn').disabled = true;
+            document.getElementById('progress').style.display = 'block';
+
+            const total = filesToDelete.length;
+            let deleted = 0;
+            let errors = 0;
+
+            log(`Starting deletion of ${total} files...`, 'info');
+
+            for (const filePath of filesToDelete) {
+                try {
+                    const { error } = await supabaseClient.storage
+                        .from(BUCKET)
+                        .remove([filePath]);
+
+                    if (error) {
+                        throw error;
+                    }
+
+                    deleted++;
+                    log(`✓ Deleted: ${filePath}`, 'success');
+                } catch (error) {
+                    errors++;
+                    log(`✗ Error deleting ${filePath}: ${error.message}`, 'error');
+                }
+
+                // Update progress
+                const progress = ((deleted + errors) / total) * 100;
+                document.getElementById('progressFill').style.width = `${progress}%`;
+                document.getElementById('progressText').textContent =
+                    `${deleted + errors} / ${total} files processed (${deleted} deleted, ${errors} errors)`;
+
+                // Small delay to avoid rate limiting
+                if ((deleted + errors) % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+
+            log(`\n=== DELETION COMPLETE ===`, 'info');
+            log(`Successfully deleted: ${deleted} files`, 'success');
+            if (errors > 0) {
+                log(`Errors: ${errors} files`, 'error');
+            }
+            log(`Space reclaimed: ~2.94 MB`, 'info');
+
+            alert(`Deletion complete!\n\nDeleted: ${deleted} files\nErrors: ${errors} files`);
+        }
+    </script>
+</body>
+</html>
