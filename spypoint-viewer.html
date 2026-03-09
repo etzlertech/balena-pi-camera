@@ -206,29 +206,37 @@
             stats.textContent = 'Loading...';
 
             try {
-                // List all files in the bucket
-                const { data, error } = await supabaseClient.storage
-                    .from(BUCKET)
-                    .list('', {
-                        limit: 1000,
-                        sortBy: { column: 'created_at', order: 'desc' }
-                    });
+                // Query the database images table for metadata (including captured_at timestamp)
+                const { data: dbImages, error: dbError } = await supabaseClient
+                    .from('images')
+                    .select('*')
+                    .order('captured_at', { ascending: false });
 
-                if (error) throw error;
+                if (dbError) throw dbError;
 
-                // Get files from all subdirectories
+                // Build file list from database records
                 const allFiles = [];
 
-                // Get top-level folders (device names)
-                for (const item of data) {
-                    if (item.id === null) { // It's a folder
-                        const deviceName = item.name;
-                        devices.add(deviceName);
+                for (const dbImage of dbImages) {
+                    // Extract device name from storage_path (e.g., "QN/PICT123.jpg" -> "QN")
+                    const pathParts = dbImage.storage_path.split('/');
+                    const deviceName = pathParts[0];
+                    const fileName = pathParts[pathParts.length - 1];
 
-                        // List all files recursively in this device folder
-                        const files = await listAllFiles(deviceName);
-                        allFiles.push(...files);
+                    // Skip thumbnails
+                    if (fileName.includes('_thumb') || fileName.includes('thumb.') || dbImage.storage_path.includes('/thumb')) {
+                        continue;
                     }
+
+                    devices.add(deviceName);
+
+                    allFiles.push({
+                        name: fileName,
+                        path: dbImage.storage_path,
+                        captured_at: dbImage.captured_at,  // Use actual capture time from database
+                        device: deviceName,
+                        camera_name: dbImage.camera_name
+                    });
                 }
 
                 allImages = allFiles;
@@ -245,45 +253,12 @@
             }
         }
 
+        // NOTE: This function is no longer used - we now query the database directly
+        // Kept for reference only
         async function listAllFiles(prefix, path = '') {
-            const fullPath = path ? `${prefix}/${path}` : prefix;
-            const files = [];
-
-            const { data, error } = await supabaseClient.storage
-                .from(BUCKET)
-                .list(fullPath, {
-                    limit: 1000,
-                    sortBy: { column: 'created_at', order: 'desc' }
-                });
-
-            if (error) {
-                console.error('Error listing files:', error);
-                return files;
-            }
-
-            for (const item of data) {
-                if (item.id === null) {
-                    // It's a folder - skip thumbnail folders
-                    if (!item.name.toLowerCase().includes('thumb')) {
-                        const subPath = path ? `${path}/${item.name}` : item.name;
-                        const subFiles = await listAllFiles(prefix, subPath);
-                        files.push(...subFiles);
-                    }
-                } else {
-                    // It's a file - skip thumbnails
-                    if (!item.name.includes('_thumb') && !item.name.includes('thumb.')) {
-                        const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
-                        files.push({
-                            name: item.name,
-                            path: filePath,
-                            created_at: item.created_at,
-                            device: prefix
-                        });
-                    }
-                }
-            }
-
-            return files;
+            // This function has been replaced by direct database queries
+            // See loadImages() function above
+            return [];
         }
 
         function updateDeviceFilter() {
@@ -313,10 +288,10 @@
                 deviceFilter === 'all' || img.device === deviceFilter
             );
 
-            // Sort images
+            // Sort images by actual capture time (not upload time)
             filtered.sort((a, b) => {
-                const timeA = new Date(a.created_at).getTime();
-                const timeB = new Date(b.created_at).getTime();
+                const timeA = new Date(a.captured_at).getTime();
+                const timeB = new Date(b.captured_at).getTime();
                 return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
             });
 
@@ -346,7 +321,7 @@
                 .from(BUCKET)
                 .getPublicUrl(image.path);
 
-            const date = new Date(image.created_at);
+            const date = new Date(image.captured_at);
             const formattedDate = date.toLocaleString();
 
             card.innerHTML = `
