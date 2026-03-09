@@ -61,7 +61,7 @@ def wake_modem() -> bool:
     try:
         logger.info(f"⏰ Waking modem: {MODEM_CONNECTION}")
         result = subprocess.run(
-            ['nmcli', 'connection', 'up', MODEM_CONNECTION],
+            ['sudo', 'nmcli', 'connection', 'up', MODEM_CONNECTION],
             capture_output=True,
             text=True,
             timeout=60
@@ -99,7 +99,7 @@ def sleep_modem():
     try:
         logger.info(f"💤 Putting modem to sleep: {MODEM_CONNECTION}")
         result = subprocess.run(
-            ['nmcli', 'connection', 'down', MODEM_CONNECTION],
+            ['sudo', 'nmcli', 'connection', 'down', MODEM_CONNECTION],
             capture_output=True,
             text=True,
             timeout=30
@@ -139,15 +139,18 @@ def enter_deep_idle():
         if result.returncode == 0:
             logger.info("  ✓ CPU powersave mode enabled")
 
-        # Disable HDMI (not used on headless camera)
-        result = subprocess.run(
-            ['/usr/bin/tvservice', '-o'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            logger.info("  ✓ HDMI disabled")
+        # Disable HDMI (if tvservice available - Pi Zero doesn't have it)
+        if Path('/usr/bin/tvservice').exists():
+            result = subprocess.run(
+                ['/usr/bin/tvservice', '-o'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                logger.info("  ✓ HDMI disabled")
+        else:
+            logger.info("  ✓ HDMI control not available (Pi Zero)")
 
         # Disable activity LED
         result = subprocess.run(
@@ -188,15 +191,18 @@ def exit_deep_idle():
         if result.returncode == 0:
             logger.info("  ✓ CPU ondemand mode enabled")
 
-        # Re-enable HDMI (though not typically used)
-        result = subprocess.run(
-            ['/usr/bin/tvservice', '-p'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            logger.info("  ✓ HDMI enabled")
+        # Re-enable HDMI (if tvservice available - Pi Zero doesn't have it)
+        if Path('/usr/bin/tvservice').exists():
+            result = subprocess.run(
+                ['/usr/bin/tvservice', '-p'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                logger.info("  ✓ HDMI enabled")
+        else:
+            logger.info("  ✓ HDMI control not available (Pi Zero)")
 
         # Re-enable activity LED
         result = subprocess.run(
