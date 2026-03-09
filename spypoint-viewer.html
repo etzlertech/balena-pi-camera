@@ -191,9 +191,9 @@
         // Supabase configuration
         const SUPABASE_URL = 'https://dtzayqhebbrbvordmabh.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w';
-        const BUCKET = 'spypoint-images';
+        const BUCKET = 'SPYPOINT-IMAGES';
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let allImages = [];
         let devices = new Set();
@@ -207,7 +207,7 @@
 
             try {
                 // List all files in the bucket
-                const { data, error } = await supabase.storage
+                const { data, error } = await supabaseClient.storage
                     .from(BUCKET)
                     .list('', {
                         limit: 1000,
@@ -249,7 +249,7 @@
             const fullPath = path ? `${prefix}/${path}` : prefix;
             const files = [];
 
-            const { data, error } = await supabase.storage
+            const { data, error } = await supabaseClient.storage
                 .from(BUCKET)
                 .list(fullPath, {
                     limit: 1000,
@@ -338,7 +338,7 @@
             card.className = 'image-card';
 
             // Get public URL
-            const { data } = supabase.storage
+            const { data } = supabaseClient.storage
                 .from(BUCKET)
                 .getPublicUrl(image.path);
 
