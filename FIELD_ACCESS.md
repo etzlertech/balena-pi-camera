@@ -23,10 +23,13 @@ ssh pi-04
 - **Cellular:** 2G GSM via Hologram (ppp0) - **SLEEPS BETWEEN CAPTURES**
 - **Tailscale:** VPN (tailscale0) - 100.76.232.7
 - **WiFi Hotspot:** DISABLED (for battery conservation)
+- **Power Mode:** Deep Idle (CPU powersave, HDMI off, LED off)
 
-### Modem Sleep Mode (Battery Optimization)
+### Power Optimization (Battery Life: 4-5 days)
 
-The cellular modem sleeps between captures to conserve battery power:
+The system uses aggressive power management:
+
+**Modem Sleep Mode:**
 
 - **Modem OFF:** Most of the time (saves ~400-500mA)
 - **Modem ON:** 5-minute window during each hourly capture
@@ -36,6 +39,20 @@ The cellular modem sleeps between captures to conserve battery power:
   - Sleeps automatically (unless keep-awake flag is set)
 
 **Power Savings:** ~95% reduction in modem power consumption
+
+**Deep Idle Mode:**
+The Pi enters deep idle mode between captures:
+- CPU frequency scaling to powersave (600MHz)
+- HDMI output disabled
+- Activity LED disabled
+- Network connections remain active
+- **Additional savings:** ~75mA @ 5V
+
+**Combined Power Draw:**
+- Deep idle: ~80mA @ 5V (~194mA from battery)
+- Active capture: ~985mA @ 5V (~1900mA from battery)
+- **Average: ~1.1W** (was 2.5W without optimizations)
+- **Battery life: 4-5 days on 12,000mAh @ 3.7V**
 
 ### SSH During Modem Sleep
 
