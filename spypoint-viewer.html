@@ -263,19 +263,23 @@
 
             for (const item of data) {
                 if (item.id === null) {
-                    // It's a folder, recurse
-                    const subPath = path ? `${path}/${item.name}` : item.name;
-                    const subFiles = await listAllFiles(prefix, subPath);
-                    files.push(...subFiles);
+                    // It's a folder - skip thumbnail folders
+                    if (!item.name.toLowerCase().includes('thumb')) {
+                        const subPath = path ? `${path}/${item.name}` : item.name;
+                        const subFiles = await listAllFiles(prefix, subPath);
+                        files.push(...subFiles);
+                    }
                 } else {
-                    // It's a file
-                    const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
-                    files.push({
-                        name: item.name,
-                        path: filePath,
-                        created_at: item.created_at,
-                        device: prefix
-                    });
+                    // It's a file - skip thumbnails
+                    if (!item.name.includes('_thumb') && !item.name.includes('thumb.')) {
+                        const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
+                        files.push({
+                            name: item.name,
+                            path: filePath,
+                            created_at: item.created_at,
+                            device: prefix
+                        });
+                    }
                 }
             }
 
