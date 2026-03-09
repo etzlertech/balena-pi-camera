@@ -20,6 +20,11 @@ Environment="IMAGE_WIDTH=2304"
 Environment="IMAGE_HEIGHT=1296"
 Environment="IMAGE_QUALITY=10"
 
+# Modem Sleep Configuration (saves ~400-500mA)
+Environment="MODEM_SLEEP_ENABLED=true"
+Environment="MODEM_CONNECTION=hologram"
+Environment="MODEM_WAKE_TIME=300"
+
 # Directory Configuration
 Environment="IMAGE_DIR=/home/pi/camera/images"
 Environment="ARCHIVE_DIR=/home/pi/camera/archive"

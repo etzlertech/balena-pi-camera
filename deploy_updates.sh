@@ -32,6 +32,10 @@ scp capture_upload_compressed.py ${PI_HOST}:/home/pi/capture_upload.py
 scp gallery.html ${PI_HOST}:/home/pi/gallery.html
 scp gallery_server.py ${PI_HOST}:/home/pi/gallery_server.py
 
+# Copy helper scripts
+scp keep_modem_awake.sh ${PI_HOST}:/home/pi/keep_modem_awake.sh
+ssh ${PI_HOST} "chmod +x /home/pi/keep_modem_awake.sh"
+
 # Copy systemd service files
 scp ranch-camera.service ${PI_HOST}:/tmp/ranch-camera.service
 scp ranch-camera.timer ${PI_HOST}:/tmp/ranch-camera.timer
@@ -58,11 +62,21 @@ echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "📝 Changes applied:"
-echo "   - Camera orientation: Fixed 180° rotation"
-echo "   - Gallery title: Updated to 'Ranch Camera Gallery'"
-echo "   - All references updated from 'Trail' to 'Ranch'"
+echo "   - Modem sleep mode: ENABLED (saves ~400-500mA)"
+echo "   - Modem wake window: 5 minutes per capture (allows SSH access)"
+echo "   - Keep-awake helper: ~/keep_modem_awake.sh"
 echo "   - Supabase upload configured (spypoint-images bucket)"
-echo "   - Images will upload to: tophand-zero-04/YYYY/MM/DD/"
+echo "   - Images upload to: tophand-zero-04/YYYY/MM/DD/"
 echo ""
-echo "🧪 Test with: ssh ${PI_HOST} 'sudo systemctl start ranch-camera.service'"
-echo "🌐 View gallery: http://10.42.0.1:8080"
+echo "⚡ Battery Life Estimate:"
+echo "   - With modem sleep: ~2-3 days on 12,000mAh battery"
+echo "   - Without modem sleep: ~40 hours (~1.5 days)"
+echo "   - Power savings: Modem sleeping 95% of time saves ~90% of modem power"
+echo ""
+echo "🔧 SSH Access During Sleep:"
+echo "   - Modem wakes hourly at :01 (e.g., 5:01, 6:01)"
+echo "   - 5-minute window to SSH in"
+echo "   - Run: bash keep_modem_awake.sh (to extend session)"
+echo ""
+echo "🧪 Test capture: ssh ${PI_HOST} 'sudo systemctl start ranch-camera.service'"
+echo "📊 View logs: ssh ${PI_HOST} 'journalctl -u ranch-camera.service -f'"

@@ -2,6 +2,7 @@
 """
 Ranch Camera Capture & Upload Service
 For Pi Zero with IMX708 Camera - Cellular Optimized with Compression
+Modem Sleep Mode: Only activates cellular for uploads to save battery
 """
 
 import os
@@ -43,6 +44,74 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Modem control configuration
+MODEM_CONNECTION = os.environ.get('MODEM_CONNECTION', 'hologram')
+MODEM_WAKE_TIME = int(os.environ.get('MODEM_WAKE_TIME', 300))  # 5 minute window for SSH access
+MODEM_SLEEP_ENABLED = os.environ.get('MODEM_SLEEP_ENABLED', 'true').lower() == 'true'
+KEEP_AWAKE_FILE = Path('/tmp/keep_modem_awake')
+
+
+def wake_modem() -> bool:
+    """Bring up cellular connection for uploads."""
+    if not MODEM_SLEEP_ENABLED:
+        logger.info("Modem sleep disabled, assuming modem is already active")
+        return True
+
+    try:
+        logger.info(f"⏰ Waking modem: {MODEM_CONNECTION}")
+        result = subprocess.run(
+            ['nmcli', 'connection', 'up', MODEM_CONNECTION],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode == 0:
+            logger.info(f"✅ Modem online, waiting {MODEM_WAKE_TIME}s for connection to stabilize")
+            time.sleep(MODEM_WAKE_TIME)
+            return True
+        else:
+            logger.error(f"Failed to wake modem: {result.stderr}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Modem wake error: {e}")
+        return False
+
+
+def sleep_modem():
+    """Put cellular connection to sleep to save battery.
+
+    Checks for /tmp/keep_modem_awake flag file - if present, modem stays awake for SSH access.
+    To keep modem awake: touch /tmp/keep_modem_awake
+    To allow sleep: rm /tmp/keep_modem_awake
+    """
+    if not MODEM_SLEEP_ENABLED:
+        logger.info("Modem sleep disabled, keeping modem active")
+        return
+
+    # Check for keep-awake flag
+    if KEEP_AWAKE_FILE.exists():
+        logger.info(f"🔒 Keep-awake flag found ({KEEP_AWAKE_FILE}), modem staying online for SSH access")
+        return
+
+    try:
+        logger.info(f"💤 Putting modem to sleep: {MODEM_CONNECTION}")
+        result = subprocess.run(
+            ['nmcli', 'connection', 'down', MODEM_CONNECTION],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            logger.info("✅ Modem sleeping (saves ~400-500mA)")
+        else:
+            logger.warning(f"Failed to sleep modem: {result.stderr}")
+
+    except Exception as e:
+        logger.error(f"Modem sleep error: {e}")
 
 
 def init_supabase() -> Client | None:
@@ -234,6 +303,11 @@ def main():
     logger.info(f"Resolution: {IMAGE_RESOLUTION}")
     logger.info(f"HQ: Full quality saved to SD card")
     logger.info(f"Upload: Quality {IMAGE_QUALITY} (~118KB for cellular)")
+    if MODEM_SLEEP_ENABLED:
+        logger.info(f"Modem Sleep: ENABLED (wake for {MODEM_WAKE_TIME}s, then sleep)")
+        logger.info(f"Keep-awake flag: {KEEP_AWAKE_FILE}")
+    else:
+        logger.info("Modem Sleep: DISABLED (modem always on)")
     logger.info("=" * 50)
 
     # Ensure directories exist
@@ -255,6 +329,8 @@ def main():
 
     # Single capture mode (for systemd timer)
     try:
+        # Step 1: Capture images (modem off to save power)
+        logger.info("Step 1/4: Capturing images (modem offline)")
         filepath_hq, filepath_compressed = capture_image()
 
         if filepath_hq:
@@ -262,23 +338,46 @@ def main():
             archive_image(filepath_hq)
             logger.info(f"HQ image archived to SD card: {filepath_hq.name}")
 
-        if filepath_compressed:
-            # Upload compressed version over cellular
-            if supabase:
+        if filepath_compressed and supabase:
+            # Step 2: Wake modem for upload (5 minute window for potential SSH access)
+            logger.info("Step 2/4: Waking modem for cellular upload (5 min window)")
+            modem_awake = wake_modem()
+
+            if modem_awake:
+                # Step 3: Upload compressed version over cellular
+                logger.info("Step 3/4: Uploading to Supabase")
                 upload_to_supabase(supabase, filepath_compressed)
 
-            # Move compressed image to web gallery for viewing
+                # Move compressed image to web gallery for viewing
+                gallery_path = GALLERY_DIR / filepath_compressed.name
+                filepath_compressed.rename(gallery_path)
+                logger.info(f"Compressed image moved to gallery: {filepath_compressed.name}")
+
+                # Cleanup old gallery images (keep last 50)
+                cleanup_gallery()
+
+                # Step 4: Put modem back to sleep (unless keep-awake flag is set)
+                logger.info("Step 4/4: Checking modem sleep status")
+                sleep_modem()
+            else:
+                logger.warning("Modem failed to wake, skipping upload")
+                # Keep compressed image for retry
+                logger.info(f"Compressed image saved for later retry: {filepath_compressed.name}")
+
+        elif filepath_compressed:
+            # No Supabase configured, just save to gallery
             gallery_path = GALLERY_DIR / filepath_compressed.name
             filepath_compressed.rename(gallery_path)
             logger.info(f"Compressed image moved to gallery: {filepath_compressed.name}")
-
-            # Cleanup old gallery images (keep last 50)
             cleanup_gallery()
 
         cleanup_archive()
+        logger.info("✅ Capture cycle complete")
 
     except Exception as e:
         logger.error(f"Capture/upload error: {e}")
+        # Try to sleep modem even if there was an error
+        sleep_modem()
         sys.exit(1)
 
 

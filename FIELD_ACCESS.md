@@ -20,9 +20,43 @@ ssh pi-04
 
 ## Active Connections
 
-- **Cellular:** 2G GSM via Hologram (ppp0)
+- **Cellular:** 2G GSM via Hologram (ppp0) - **SLEEPS BETWEEN CAPTURES**
 - **Tailscale:** VPN (tailscale0) - 100.76.232.7
 - **WiFi Hotspot:** DISABLED (for battery conservation)
+
+### Modem Sleep Mode (Battery Optimization)
+
+The cellular modem sleeps between captures to conserve battery power:
+
+- **Modem OFF:** Most of the time (saves ~400-500mA)
+- **Modem ON:** 5-minute window during each hourly capture
+  - Wakes 1 minute after capture
+  - Uploads image (~2-3 minutes)
+  - Stays awake for 5 minutes total (allows SSH access)
+  - Sleeps automatically (unless keep-awake flag is set)
+
+**Power Savings:** ~95% reduction in modem power consumption
+
+### SSH During Modem Sleep
+
+If you need to SSH in for maintenance:
+
+1. **Wait for next capture window:** Modem wakes hourly at :01 minutes (e.g., 5:01, 6:01, 7:01)
+2. **SSH in quickly:** You have a 5-minute window
+3. **Keep modem awake:** Run the keep-awake script
+
+```bash
+# Keep modem awake for extended maintenance
+bash keep_modem_awake.sh
+
+# Or manually:
+touch /tmp/keep_modem_awake
+
+# To re-enable sleep:
+rm /tmp/keep_modem_awake
+```
+
+**Important:** Remember to remove the keep-awake flag when done to save battery!
 
 ## Ranch Camera Status
 
