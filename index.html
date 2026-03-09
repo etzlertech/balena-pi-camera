@@ -246,6 +246,22 @@
             stats.textContent = 'Loading...';
 
             try {
+                // Get hidden images from database (if available)
+                const hiddenImages = new Set();
+                try {
+                    const { data: dbImages, error: dbError } = await supabaseClient
+                        .from('images')
+                        .select('storage_path')
+                        .eq('is_hidden', true);
+
+                    if (!dbError && dbImages) {
+                        dbImages.forEach(img => hiddenImages.add(img.storage_path));
+                        console.log(`Found ${hiddenImages.size} hidden images in database`);
+                    }
+                } catch (e) {
+                    console.log('Could not load hidden images list (non-fatal):', e.message);
+                }
+
                 // Get all files from storage
                 const { data, error } = await supabaseClient.storage
                     .from(BUCKET)
@@ -272,7 +288,7 @@
                         devices.add(deviceName);
 
                         // List all files recursively in this device folder
-                        const files = await listAllFiles(deviceName);
+                        const files = await listAllFiles(deviceName, '', hiddenImages);
                         allFiles.push(...files);
                     }
                 }
@@ -291,7 +307,7 @@
             }
         }
 
-        async function listAllFiles(prefix, path = '') {
+        async function listAllFiles(prefix, path = '', hiddenImages = new Set()) {
             const fullPath = path ? `${prefix}/${path}` : prefix;
             const files = [];
 
@@ -313,7 +329,7 @@
                     const folderName = item.name.toLowerCase();
                     if (!folderName.includes('thumb') && folderName !== 'hd') {
                         const subPath = path ? `${path}/${item.name}` : item.name;
-                        const subFiles = await listAllFiles(prefix, subPath);
+                        const subFiles = await listAllFiles(prefix, subPath, hiddenImages);
                         files.push(...subFiles);
                     }
                 } else {
@@ -324,7 +340,10 @@
                                        filePath.includes('/thumbnails/') ||
                                        filePath.includes('/thumb/');
 
-                    if (!isThumbnail) {
+                    // Skip if image is marked as hidden in database
+                    const isHidden = hiddenImages.has(filePath);
+
+                    if (!isThumbnail && !isHidden) {
                         // Parse capture date from filename, fallback to storage created_at
                         const parsedDate = parseDateFromFilename(item.name);
                         const capturedAt = parsedDate ? parsedDate.toISOString() : item.created_at;
