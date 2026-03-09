@@ -289,10 +289,14 @@
                         files.push(...subFiles);
                     }
                 } else {
-                    // It's a file - skip thumbnails
-                    if (!item.name.includes('_thumb') && !item.name.includes('thumb.')) {
-                        const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
+                    // It's a file - skip thumbnails (by name or path)
+                    const filePath = path ? `${prefix}/${path}/${item.name}` : `${prefix}/${item.name}`;
+                    const isThumbnail = item.name.includes('_thumb') ||
+                                       item.name.includes('thumb.') ||
+                                       filePath.includes('/thumbnails/') ||
+                                       filePath.includes('/thumb/');
 
+                    if (!isThumbnail) {
                         // Parse capture date from filename, fallback to storage created_at
                         const parsedDate = parseDateFromFilename(item.name);
                         const capturedAt = parsedDate ? parsedDate.toISOString() : item.created_at;
