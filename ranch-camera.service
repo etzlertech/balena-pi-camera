@@ -21,7 +21,7 @@ Environment="IMAGE_HEIGHT=1296"
 Environment="IMAGE_QUALITY=10"
 
 # Modem Sleep Configuration (saves ~400-500mA)
-Environment="MODEM_SLEEP_ENABLED=true"
+Environment="MODEM_SLEEP_ENABLED=false"
 Environment="MODEM_CONNECTION=hologram"
 Environment="MODEM_WAKE_TIME=300"
 
