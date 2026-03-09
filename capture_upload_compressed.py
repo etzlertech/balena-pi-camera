@@ -79,6 +79,10 @@ def capture_image() -> tuple[Path | None, Path | None]:
     # Parse resolution
     width, height = IMAGE_RESOLUTION.split('x')
 
+    # Check if it's nighttime (7pm - 6am)
+    current_hour = datetime.now().hour
+    is_night = current_hour >= 19 or current_hour < 6
+
     # Capture high-quality image first (default quality ~95)
     cmd_hq = [
         'rpicam-still',
@@ -89,6 +93,18 @@ def capture_image() -> tuple[Path | None, Path | None]:
         '-t', '2000',  # 2 second warmup
         '--nopreview',
     ]
+
+    # Add night mode settings for low-light conditions
+    if is_night:
+        logger.info("Night mode: Using low-light camera settings")
+        cmd_hq.extend([
+            '--shutter', '200000',  # 200ms exposure (longer for low light)
+            '--gain', '8',          # Higher ISO/gain for sensitivity
+            '--brightness', '0.2',  # Boost brightness
+            '--ev', '1',            # +1 exposure compensation
+        ])
+    else:
+        logger.info("Day mode: Using standard camera settings")
 
     try:
         logger.info(f"Capturing high-quality image: {filename_hq}")
@@ -116,6 +132,15 @@ def capture_image() -> tuple[Path | None, Path | None]:
             '-t', '2000',
             '--nopreview',
         ]
+
+        # Apply same night mode settings to compressed version
+        if is_night:
+            cmd_compressed.extend([
+                '--shutter', '200000',  # 200ms exposure
+                '--gain', '8',          # Higher ISO/gain
+                '--brightness', '0.2',  # Boost brightness
+                '--ev', '1',            # +1 exposure compensation
+            ])
 
         logger.info(f"Creating compressed version: {filename_compressed} (quality={IMAGE_QUALITY})")
         result = subprocess.run(cmd_compressed, capture_output=True, text=True, timeout=30)
