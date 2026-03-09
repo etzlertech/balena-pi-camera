@@ -2,42 +2,15 @@
 
 ## WiFi Hotspot Access
 
-**SSID:** `tophand-pizero-04`
-**Password:** `44444444`
-**Pi IP Address:** `10.42.0.1`
+**Status:** DISABLED (to save battery power)
 
-## Web Gallery Access 🖼️
-
-### View Images from Phone/Laptop
-
-1. Connect to WiFi network: `tophand-pizero-04`
-2. Enter password: `44444444`
-3. Open browser and go to: **http://10.42.0.1:8080**
-
-**Features:**
-- Mobile-friendly design
-- One image per row (easy scrolling)
-- Newest images first
-- Auto-refresh every 5 minutes
-- Shows last 50 compressed images (~118KB each)
-- Tap refresh button (⟳) to update
+Images are uploaded to Supabase cloud storage and can be viewed via:
+- Supabase dashboard: https://supabase.com/dashboard/project/dtzayqhebbrbvordmabh/storage/buckets/spypoint-images
+- Local viewer: Open `spypoint-viewer.html` in browser
 
 ## SSH Connection
 
-### From Laptop in Field
-
-1. Connect your laptop to WiFi network: `tophand-pizero-04`
-2. Enter password: `44444444`
-3. SSH to the Pi:
-   ```bash
-   ssh pi@10.42.0.1
-   ```
-4. Or if you have the SSH config set up:
-   ```bash
-   ssh pi-04
-   ```
-
-### From Remote (via Tailscale)
+### Remote Access (via Tailscale)
 
 ```bash
 ssh pi@100.76.232.7
@@ -48,8 +21,8 @@ ssh pi-04
 ## Active Connections
 
 - **Cellular:** 2G GSM via Hologram (ppp0)
-- **Hotspot:** tophand-pizero-04 (wlan0) - 10.42.0.1/24
 - **Tailscale:** VPN (tailscale0) - 100.76.232.7
+- **WiFi Hotspot:** DISABLED (for battery conservation)
 
 ## Ranch Camera Status
 
