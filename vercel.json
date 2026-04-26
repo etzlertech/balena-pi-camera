@@ -8,6 +8,10 @@
   ],
   "routes": [
     {
+      "src": "/tophand/?",
+      "dest": "/spypoint-viewer.html"
+    },
+    {
       "src": "/",
       "dest": "/spypoint-viewer.html"
     }

@@ -29,6 +29,22 @@
             margin-bottom: 10px;
         }
 
+        .header p {
+            color: #b9b9b9;
+        }
+
+        .tophand-mode h1 {
+            margin-bottom: 4px;
+        }
+
+        .tophand-mode .header p {
+            color: #d6b56d;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
         .controls {
             display: flex;
             gap: 10px;
@@ -89,6 +105,11 @@
             height: 250px;
             object-fit: cover;
             cursor: pointer;
+        }
+
+        .tophand-mode .image-card img {
+            background: #050505;
+            object-fit: contain;
         }
 
         .image-info {
@@ -163,8 +184,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>🐄 RanchView Image Gallery</h1>
-        <p>All ranch cameras</p>
+        <h1 id="galleryTitle">🐄 RanchView Image Gallery</h1>
+        <p id="gallerySubtitle">All ranch cameras</p>
     </div>
 
     <div class="controls">
@@ -191,7 +212,25 @@
         // Supabase configuration
         const SUPABASE_URL = 'https://dtzayqhebbrbvordmabh.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w';
-        const BUCKET = 'spypoint-images';
+        const VIEW_MODES = {
+            ranchview: {
+                bucket: 'spypoint-images',
+                title: '🐄 RanchView Image Gallery',
+                subtitle: 'All ranch cameras',
+                hiddenTable: 'images'
+            },
+            tophand: {
+                bucket: 'tophand-branded-images',
+                title: 'RanchView',
+                subtitle: 'by TOPHAND',
+                manifestPath: 'manifest.json',
+                hiddenTable: null
+            }
+        };
+
+        const pathName = window.location.pathname.replace(/\/$/, '');
+        const viewMode = pathName === '/tophand' ? VIEW_MODES.tophand : VIEW_MODES.ranchview;
+        const BUCKET = viewMode.bucket;
 
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -215,6 +254,16 @@
         // Get friendly name or return original
         function getFriendlyName(deviceName) {
             return cameraNames[deviceName] || deviceName;
+        }
+
+        function configureViewMode() {
+            document.title = viewMode === VIEW_MODES.tophand ? 'RanchView by TOPHAND' : 'RanchView Image Gallery';
+            document.getElementById('galleryTitle').textContent = viewMode.title;
+            document.getElementById('gallerySubtitle').textContent = viewMode.subtitle;
+
+            if (viewMode === VIEW_MODES.tophand) {
+                document.body.classList.add('tophand-mode');
+            }
         }
 
         function parseDateFromFilename(filename) {
@@ -246,20 +295,67 @@
             stats.textContent = 'Loading...';
 
             try {
+                devices = new Set();
+
                 // Get hidden images from database (if available)
                 const hiddenImages = new Set();
-                try {
-                    const { data: dbImages, error: dbError } = await supabaseClient
-                        .from('images')
-                        .select('storage_path')
-                        .eq('is_hidden', true);
+                if (viewMode.hiddenTable) {
+                    try {
+                        const { data: dbImages, error: dbError } = await supabaseClient
+                            .from(viewMode.hiddenTable)
+                            .select('storage_path')
+                            .eq('is_hidden', true);
 
-                    if (!dbError && dbImages) {
-                        dbImages.forEach(img => hiddenImages.add(img.storage_path));
-                        console.log(`Found ${hiddenImages.size} hidden images in database`);
+                        if (!dbError && dbImages) {
+                            dbImages.forEach(img => hiddenImages.add(img.storage_path));
+                            console.log(`Found ${hiddenImages.size} hidden images in database`);
+                        }
+                    } catch (e) {
+                        console.log('Could not load hidden images list (non-fatal):', e.message);
                     }
-                } catch (e) {
-                    console.log('Could not load hidden images list (non-fatal):', e.message);
+                }
+
+                if (viewMode.manifestPath) {
+                    const { data: manifestData } = supabaseClient.storage
+                        .from(BUCKET)
+                        .getPublicUrl(viewMode.manifestPath);
+
+                    const manifestResponse = await fetch(`${manifestData.publicUrl}?t=${Date.now()}`, {
+                        cache: 'no-store'
+                    });
+
+                    if (manifestResponse.status === 404) {
+                        allImages = [];
+                        updateDeviceFilter();
+                        displayImages();
+                        return;
+                    }
+
+                    if (!manifestResponse.ok) {
+                        throw new Error(`Could not load branded image manifest (${manifestResponse.status})`);
+                    }
+
+                    const manifest = await manifestResponse.json();
+                    allImages = (manifest.images || [])
+                        .filter(image => image.path && !hiddenImages.has(image.path))
+                        .map(image => {
+                            const name = image.name || image.path.split('/').pop();
+                            const device = image.device || image.path.split('/')[0];
+                            const parsedDate = parseDateFromFilename(name);
+
+                            devices.add(device);
+                            return {
+                                name,
+                                path: image.path,
+                                captured_at: image.captured_at || (parsedDate ? parsedDate.toISOString() : null),
+                                device
+                            };
+                        })
+                        .filter(image => image.captured_at);
+
+                    updateDeviceFilter();
+                    displayImages();
+                    return;
                 }
 
                 // Get all files from storage
@@ -455,6 +551,7 @@
         });
 
         // Load images on page load
+        configureViewMode();
         loadImages();
     </script>
 </body>
