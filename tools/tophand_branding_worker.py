@@ -221,7 +221,10 @@ class SupabaseRest:
             return None
         if response.status_code in {502, 503, 504}:
             return None
-        payload = api_json(response)
+        try:
+            payload = api_json(response)
+        except WorkerError:
+            return None
         return payload if isinstance(payload, dict) else None
 
     def object_exists(self, bucket: str, path: str) -> bool:
