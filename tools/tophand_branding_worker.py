@@ -203,14 +203,23 @@ class SupabaseRest:
         return response.content
 
     def download_json_optional(self, bucket: str, path: str) -> dict[str, Any] | None:
-        response = requests.get(
-            f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
-            headers=self.headers(content_type=None),
-            timeout=self.timeout,
-        )
+        response = None
+        for attempt in range(3):
+            response = requests.get(
+                f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
+                headers=self.headers(content_type=None),
+                timeout=self.timeout,
+            )
+            if response.status_code not in {502, 503, 504}:
+                break
+            time.sleep(2 * (attempt + 1))
+        if response is None:
+            return None
         if response.status_code == 404:
             return None
         if response.status_code == 400 and '"statusCode":"404"' in response.text:
+            return None
+        if response.status_code in {502, 503, 504}:
             return None
         payload = api_json(response)
         return payload if isinstance(payload, dict) else None
