@@ -127,6 +127,45 @@
             color: #888;
         }
 
+        .tophand-mode .image-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .tophand-card-title {
+            font-size: 0.98rem;
+            font-weight: 700;
+            color: #f2f2f2;
+            line-height: 1.25;
+        }
+
+        .tophand-card-time {
+            color: #b9b9b9;
+            font-size: 0.86rem;
+            line-height: 1.35;
+        }
+
+        .vlm-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .vlm-tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 4px 8px;
+            border: 1px solid rgba(214, 181, 109, 0.32);
+            border-radius: 4px;
+            background: rgba(214, 181, 109, 0.08);
+            color: #e5d1a0;
+            font-size: 0.72rem;
+            font-weight: 650;
+            line-height: 1.2;
+        }
+
         .device-tag {
             display: inline-block;
             padding: 4px 8px;
@@ -256,6 +295,16 @@
             return cameraNames[deviceName] || deviceName;
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
         function configureViewMode() {
             document.title = viewMode === VIEW_MODES.tophand ? 'RanchView by TOPHAND' : 'RanchView Image Gallery';
             document.getElementById('galleryTitle').textContent = viewMode.title;
@@ -342,13 +391,27 @@
                             const name = image.name || image.path.split('/').pop();
                             const device = image.device || image.path.split('/')[0];
                             const parsedDate = parseDateFromFilename(name);
+                            const metadata = image.metadata || {};
+                            const vlm = image.vlm || metadata.vlm || null;
+                            const structuredVlm = vlm && (
+                                vlm.animals_detected !== undefined ||
+                                vlm.animal_count !== undefined ||
+                                vlm.humans_detected !== undefined ||
+                                vlm.vehicles_detected !== undefined ||
+                                vlm.water_present !== undefined ||
+                                vlm.gate_status !== undefined ||
+                                vlm.alert_priority !== undefined
+                            );
 
                             devices.add(device);
                             return {
                                 name,
                                 path: image.path,
                                 captured_at: image.captured_at || (parsedDate ? parsedDate.toISOString() : null),
-                                device
+                                device,
+                                camera_title: image.camera_title || getFriendlyName(device),
+                                temperature_text: image.temperature_text || image.overlay_temperature_text || metadata.overlay_temperature_text || null,
+                                analysis: image.analysis || image.vlm_analysis || metadata.analysis || metadata.vlm_analysis || (structuredVlm ? vlm : null)
                             };
                         })
                         .filter(image => image.captured_at);
@@ -457,6 +520,109 @@
             return files;
         }
 
+        function formatCaptureDateTime(capturedAt) {
+            const date = new Date(capturedAt);
+            if (Number.isNaN(date.getTime())) {
+                return 'Capture time unavailable';
+            }
+
+            return date.toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+        }
+
+        function normalizeSpecies(value) {
+            if (!value) return '';
+            if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+            if (typeof value === 'object') {
+                return Object.keys(value)
+                    .filter(key => value[key])
+                    .join(', ');
+            }
+            return String(value);
+        }
+
+        function titleCase(value) {
+            return String(value || '')
+                .replace(/[_-]+/g, ' ')
+                .replace(/\w\S*/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+        }
+
+        function compactPercent(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const number = Number(value);
+            if (Number.isNaN(number)) return String(value);
+            return `${Math.round(number)}%`;
+        }
+
+        function buildVlmTags(image) {
+            const analysis = image.analysis || {};
+            const tags = [];
+
+            if (image.temperature_text) {
+                tags.push(image.temperature_text);
+            }
+
+            const animalSpecies = normalizeSpecies(analysis.animal_species || analysis.species);
+            if (analysis.animals_detected || analysis.animal_count || animalSpecies) {
+                const count = analysis.animal_count ? `${analysis.animal_count} ` : '';
+                tags.push(`${count}${animalSpecies || 'animals'}`.trim());
+            }
+
+            if (analysis.humans_detected || analysis.human_count) {
+                tags.push(analysis.human_count ? `${analysis.human_count} people` : 'People');
+            }
+
+            if (analysis.vehicles_detected || analysis.vehicle_count || analysis.vehicle_types) {
+                const vehicleTypes = normalizeSpecies(analysis.vehicle_types);
+                tags.push(vehicleTypes || (analysis.vehicle_count ? `${analysis.vehicle_count} vehicles` : 'Vehicles'));
+            }
+
+            if (analysis.water_present || analysis.water_level || analysis.water_level_percentage !== undefined) {
+                const waterLevel = compactPercent(analysis.water_level_percentage) || titleCase(analysis.water_level);
+                tags.push(waterLevel ? `Water ${waterLevel}` : 'Water');
+            }
+
+            if (analysis.gate_status) {
+                tags.push(`Gate ${titleCase(analysis.gate_status)}`);
+            }
+
+            if (analysis.alert_priority && !['none', 'normal', 'low'].includes(String(analysis.alert_priority).toLowerCase())) {
+                tags.push(`Alert ${titleCase(analysis.alert_priority)}`);
+            }
+
+            if (analysis.confidence_score !== undefined && analysis.confidence_score !== null) {
+                const confidence = Number(analysis.confidence_score);
+                if (!Number.isNaN(confidence)) {
+                    tags.push(`${Math.round(confidence * (confidence <= 1 ? 100 : 1))}% confidence`);
+                }
+            }
+
+            if (analysis.summary || analysis.short_summary) {
+                tags.push(String(analysis.summary || analysis.short_summary));
+            }
+
+            return tags
+                .filter(Boolean)
+                .map(tag => String(tag).trim())
+                .filter((tag, index, list) => tag && list.indexOf(tag) === index)
+                .slice(0, 4);
+        }
+
+        function renderVlmTags(image) {
+            const tags = buildVlmTags(image);
+            if (!tags.length) return '';
+            return `
+                <div class="vlm-tags">
+                    ${tags.map(tag => `<span class="vlm-tag">${escapeHtml(tag)}</span>`).join('')}
+                </div>
+            `;
+        }
+
         function updateDeviceFilter() {
             const filter = document.getElementById('deviceFilter');
             const currentValue = filter.value;
@@ -517,15 +683,28 @@
                 .from(BUCKET)
                 .getPublicUrl(image.path);
 
-            const date = new Date(image.captured_at);
-            const formattedDate = date.toLocaleString();
+            const formattedDate = formatCaptureDateTime(image.captured_at);
+
+            if (viewMode === VIEW_MODES.tophand) {
+                const cameraTitle = image.camera_title || getFriendlyName(image.device);
+                card.innerHTML = `
+                    <img src="${data.publicUrl}" alt="${escapeHtml(cameraTitle)} ${escapeHtml(formattedDate)}" onclick="openLightbox('${data.publicUrl}')">
+                    <div class="image-info">
+                        <div class="tophand-card-title">${escapeHtml(cameraTitle)}</div>
+                        <div class="tophand-card-time">${escapeHtml(formattedDate)}</div>
+                        ${renderVlmTags(image)}
+                    </div>
+                `;
+
+                return card;
+            }
 
             card.innerHTML = `
-                <img src="${data.publicUrl}" alt="${image.name}" onclick="openLightbox('${data.publicUrl}')">
+                <img src="${data.publicUrl}" alt="${escapeHtml(image.name)}" onclick="openLightbox('${data.publicUrl}')">
                 <div class="image-info">
-                    <div class="image-name">${image.name}</div>
-                    <div class="image-meta">${formattedDate}</div>
-                    <span class="device-tag">${getFriendlyName(image.device)}</span>
+                    <div class="image-name">${escapeHtml(image.name)}</div>
+                    <div class="image-meta">${escapeHtml(formattedDate)}</div>
+                    <span class="device-tag">${escapeHtml(getFriendlyName(image.device))}</span>
                 </div>
             `;
 

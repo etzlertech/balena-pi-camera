@@ -202,6 +202,19 @@ class SupabaseRest:
             raise WorkerError(f"Failed downloading {path}: HTTP {response.status_code}") from exc
         return response.content
 
+    def download_json_optional(self, bucket: str, path: str) -> dict[str, Any] | None:
+        response = requests.get(
+            f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
+            headers=self.headers(content_type=None),
+            timeout=self.timeout,
+        )
+        if response.status_code == 404:
+            return None
+        if response.status_code == 400 and '"statusCode":"404"' in response.text:
+            return None
+        payload = api_json(response)
+        return payload if isinstance(payload, dict) else None
+
     def object_exists(self, bucket: str, path: str) -> bool:
         response = requests.head(
             f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
@@ -414,6 +427,10 @@ def parse_branded_capture_time(name: str, fallback: str | None) -> str:
     return parse_sort_time(fallback).astimezone(CAPTURE_TZ).isoformat()
 
 
+def branded_metadata_path(branded_path: str) -> str:
+    return f"_metadata/{branded_path}.json"
+
+
 def publish_manifest(client: SupabaseRest, bucket: str, limit: int) -> int:
     objects = list_source_objects(
         client=client,
@@ -424,6 +441,7 @@ def publish_manifest(client: SupabaseRest, bucket: str, limit: int) -> int:
     )
     entries = []
     for item in objects:
+        metadata = client.download_json_optional(bucket, branded_metadata_path(item.path)) or {}
         entries.append(
             {
                 "name": item.name,
@@ -431,6 +449,17 @@ def publish_manifest(client: SupabaseRest, bucket: str, limit: int) -> int:
                 "device": item.device,
                 "captured_at": parse_branded_capture_time(item.name, item.created_at),
                 "camera_title": CAMERA_NAMES.get(item.device, item.device),
+                "temperature_text": metadata.get("overlay_temperature_text"),
+                "source_path": metadata.get("source_storage_path"),
+                "vlm": {
+                    "summary": metadata.get("overlay_raw_text"),
+                    "extractor_model": metadata.get("extractor_model"),
+                    "extractor_source": metadata.get("extractor_source"),
+                    "extractor_seconds": metadata.get("extractor_seconds"),
+                }
+                if metadata
+                else None,
+                "analysis": metadata.get("analysis") or metadata.get("ranch_eye_analysis"),
             }
         )
     entries.sort(key=lambda row: parse_sort_time(row["captured_at"]), reverse=True)
@@ -800,6 +829,12 @@ def process_one(client: SupabaseRest, source: StorageObject, args: argparse.Name
 
     if args.write:
         client.upload_jpeg(args.dest_bucket, destination_path, branded_bytes)
+        client.upload_bytes(
+            args.dest_bucket,
+            branded_metadata_path(destination_path),
+            json.dumps(version, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+            "application/json",
+        )
         db_updated = False
         if args.update_db:
             metadata = merge_metadata(row, version)
@@ -825,6 +860,7 @@ def process_one(client: SupabaseRest, source: StorageObject, args: argparse.Name
                 )
         report["status"] = "uploaded"
         report["db_updated"] = db_updated
+        report["metadata_path"] = branded_metadata_path(destination_path)
 
     return report
 
