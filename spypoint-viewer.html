@@ -559,6 +559,11 @@
             return `${Math.round(number)}%`;
         }
 
+        function hasKnownValue(value) {
+            if (value === null || value === undefined || value === '') return false;
+            return !['unknown', 'none', 'null', 'false'].includes(String(value).toLowerCase());
+        }
+
         function buildVlmTags(image) {
             const analysis = image.analysis || {};
             const tags = [];
@@ -577,18 +582,23 @@
                 tags.push(analysis.human_count ? `${analysis.human_count} people` : 'People');
             }
 
-            if (analysis.vehicles_detected || analysis.vehicle_count || analysis.vehicle_types) {
-                const vehicleTypes = normalizeSpecies(analysis.vehicle_types);
+            const vehicleTypes = normalizeSpecies(analysis.vehicle_types);
+            if (analysis.vehicles_detected || analysis.vehicle_count || vehicleTypes) {
                 tags.push(vehicleTypes || (analysis.vehicle_count ? `${analysis.vehicle_count} vehicles` : 'Vehicles'));
             }
 
-            if (analysis.water_present || analysis.water_level || analysis.water_level_percentage !== undefined) {
+            const hasWaterLevel = hasKnownValue(analysis.water_level);
+            if (analysis.water_present || hasWaterLevel || (analysis.water_level_percentage !== undefined && analysis.water_level_percentage !== null)) {
                 const waterLevel = compactPercent(analysis.water_level_percentage) || titleCase(analysis.water_level);
-                tags.push(waterLevel ? `Water ${waterLevel}` : 'Water');
+                tags.push(hasKnownValue(waterLevel) ? `Water ${waterLevel}` : 'Water');
             }
 
-            if (analysis.gate_status) {
+            if (hasKnownValue(analysis.gate_status)) {
                 tags.push(`Gate ${titleCase(analysis.gate_status)}`);
+            }
+
+            if (analysis.summary || analysis.short_summary) {
+                tags.push(String(analysis.summary || analysis.short_summary));
             }
 
             if (analysis.alert_priority && !['none', 'normal', 'low'].includes(String(analysis.alert_priority).toLowerCase())) {
@@ -597,13 +607,9 @@
 
             if (analysis.confidence_score !== undefined && analysis.confidence_score !== null) {
                 const confidence = Number(analysis.confidence_score);
-                if (!Number.isNaN(confidence)) {
+                if (!Number.isNaN(confidence) && confidence < 0.9) {
                     tags.push(`${Math.round(confidence * (confidence <= 1 ? 100 : 1))}% confidence`);
                 }
-            }
-
-            if (analysis.summary || analysis.short_summary) {
-                tags.push(String(analysis.summary || analysis.short_summary));
             }
 
             return tags
