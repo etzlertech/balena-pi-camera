@@ -241,16 +241,23 @@ class SupabaseRest:
         return False
 
     def upload_bytes(self, bucket: str, path: str, data: bytes, content_type: str) -> None:
-        response = requests.post(
-            f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
-            headers={
-                **self.headers(content_type=content_type),
-                "Cache-Control": "3600",
-                "x-upsert": "true",
-            },
-            data=data,
-            timeout=self.timeout,
-        )
+        response = None
+        for attempt in range(3):
+            response = requests.post(
+                f"{self.url}/storage/v1/object/{bucket}/{quote(path, safe='/')}",
+                headers={
+                    **self.headers(content_type=content_type),
+                    "Cache-Control": "3600",
+                    "x-upsert": "true",
+                },
+                data=data,
+                timeout=self.timeout,
+            )
+            if response.status_code not in {502, 503, 504}:
+                break
+            time.sleep(2 * (attempt + 1))
+        if response is None:
+            raise WorkerError(f"Failed uploading {path}: no response")
         if response.status_code not in {200, 201}:
             detail = response.text[:500]
             raise WorkerError(f"Failed uploading {path}: HTTP {response.status_code}: {detail}")
