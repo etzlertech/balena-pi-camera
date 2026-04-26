@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+"""Small browser UI for creating Pastucha Hay golden labels.
+
+This is intentionally dependency-light: stdlib HTTP server plus the existing
+Supabase helper from `tophand_branding_worker.py`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import html
+import json
+import os
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+try:
+    import tophand_branding_worker as branding
+except ModuleNotFoundError as exc:  # pragma: no cover
+    raise SystemExit("Run this from a checkout containing tools/tophand_branding_worker.py") from exc
+
+
+CAMERA_ID = "FLEX-M-MGE4"
+CAMERA_TITLE = "Pastucha Hay"
+DEST_BUCKET = branding.DEST_BUCKET
+DEFAULT_DATA_DIR = Path("/home/travis/tophand-instances/sdco/research/pastucha-hay")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Pastucha Hay golden-label UI")
+    parser.add_argument("--env", type=Path, default=Path("/home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env"))
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8771)
+    parser.add_argument("--manifest-path", default="manifest.json")
+    return parser.parse_args()
+
+
+def parse_time(value: str | None) -> dt.datetime:
+    if not value:
+        return dt.datetime.min.replace(tzinfo=dt.UTC)
+    cleaned = value.replace("Z", "+00:00")
+    try:
+        parsed = dt.datetime.fromisoformat(cleaned)
+    except ValueError:
+        return dt.datetime.min.replace(tzinfo=dt.UTC)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.UTC)
+    return parsed
+
+
+def read_json(path: Path, fallback: Any) -> Any:
+    if not path.exists():
+        return fallback
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return fallback
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+class LabelStore:
+    def __init__(self, data_dir: Path) -> None:
+        self.data_dir = data_dir
+        self.latest_path = data_dir / "golden_labels.latest.json"
+        self.jsonl_path = data_dir / "golden_labels.jsonl"
+        self.latest: dict[str, Any] = read_json(self.latest_path, {})
+
+    def get(self, image_path: str) -> dict[str, Any] | None:
+        value = self.latest.get(image_path)
+        return value if isinstance(value, dict) else None
+
+    def upsert(self, payload: dict[str, Any]) -> dict[str, Any]:
+        image_path = str(payload.get("path") or "")
+        if not image_path:
+            raise ValueError("Missing image path")
+        now = dt.datetime.now(dt.UTC).isoformat()
+        payload["updated_at"] = now
+        payload.setdefault("schema_version", "pastucha_hay_label_v1")
+        self.latest[image_path] = payload
+        write_json(self.latest_path, self.latest)
+        append_jsonl(self.jsonl_path, payload)
+        return payload
+
+
+class ImageIndex:
+    def __init__(self, client: branding.SupabaseRest, manifest_path: str) -> None:
+        self.client = client
+        self.manifest_path = manifest_path
+        self.images: list[dict[str, Any]] = []
+        self.reload()
+
+    def reload(self) -> None:
+        manifest = self.client.download_json_optional(DEST_BUCKET, self.manifest_path)
+        if not manifest:
+            raise RuntimeError(f"Could not load {DEST_BUCKET}/{self.manifest_path}")
+        images = []
+        for item in manifest.get("images", []):
+            if item.get("device") != CAMERA_ID:
+                continue
+            row = dict(item)
+            row["public_url"] = self.client.public_url(DEST_BUCKET, row["path"])
+            row["sort_time"] = parse_time(row.get("captured_at")).isoformat()
+            images.append(row)
+        images.sort(key=lambda row: parse_time(row.get("captured_at")), reverse=True)
+        self.images = images
+
+    def query(self, params: dict[str, list[str]], labels: LabelStore) -> list[dict[str, Any]]:
+        start = (params.get("start") or [""])[0]
+        end = (params.get("end") or [""])[0]
+        limit = int((params.get("limit") or ["100"])[0] or 100)
+        unlabeled_only = (params.get("unlabeled") or ["0"])[0] in {"1", "true", "yes"}
+
+        start_dt = dt.datetime.fromisoformat(start).replace(tzinfo=branding.CAPTURE_TZ) if start else None
+        end_dt = dt.datetime.fromisoformat(end).replace(hour=23, minute=59, second=59, tzinfo=branding.CAPTURE_TZ) if end else None
+
+        rows = []
+        for image in self.images:
+            captured = parse_time(image.get("captured_at"))
+            if start_dt and captured < start_dt:
+                continue
+            if end_dt and captured > end_dt:
+                continue
+            existing = labels.get(image["path"])
+            if unlabeled_only and existing:
+                continue
+            row = dict(image)
+            row["label"] = existing
+            rows.append(row)
+            if len(rows) >= limit:
+                break
+        return rows
+
+
+def html_page() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pastucha Hay Golden Labels</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151515;
+      --panel: #242424;
+      --panel-2: #303030;
+      --text: #f2f2f2;
+      --muted: #aaa;
+      --line: #444;
+      --gold: #d6b56d;
+      --green: #49b35a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #111;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    h1 { font-size: 20px; margin: 0; }
+    .sub { color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+    input, select, textarea, button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 9px 10px;
+      font: inherit;
+    }
+    button { cursor: pointer; font-weight: 700; }
+    button.primary { background: var(--green); border-color: var(--green); color: white; }
+    main {
+      display: grid;
+      grid-template-columns: 300px minmax(420px, 1fr) 440px;
+      min-height: calc(100vh - 74px);
+    }
+    aside, section { min-width: 0; }
+    .list {
+      border-right: 1px solid var(--line);
+      overflow: auto;
+      max-height: calc(100vh - 74px);
+    }
+    .item {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 10px;
+      padding: 10px;
+      border-bottom: 1px solid #333;
+      cursor: pointer;
+    }
+    .item.active { background: #333; outline: 1px solid var(--gold); }
+    .item img { width: 72px; height: 54px; object-fit: cover; border-radius: 4px; }
+    .item strong { display: block; font-size: 13px; }
+    .item span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .badge { color: var(--gold); font-weight: 700; }
+    .viewer {
+      padding: 18px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .viewer img {
+      width: 100%;
+      max-height: 76vh;
+      object-fit: contain;
+      background: #050505;
+      border-radius: 8px;
+    }
+    .meta { color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+    .form {
+      border-left: 1px solid var(--line);
+      padding: 18px;
+      overflow: auto;
+      max-height: calc(100vh - 74px);
+      background: #1d1d1d;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .checks label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--panel);
+      padding: 8px 9px;
+      border-radius: 6px;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    .status { color: var(--gold); min-height: 20px; margin-top: 10px; }
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+      .list, .form { max-height: none; border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Pastucha Hay Golden Labels</h1>
+      <div class="sub">FLEX-M-MGE4 ROUND BALE RESEARCH</div>
+    </div>
+    <div class="filters">
+      <label>Start <input id="start" type="date"></label>
+      <label>End <input id="end" type="date"></label>
+      <label>Limit <input id="limit" type="number" value="100" min="1" max="500"></label>
+      <label><span>&nbsp;</span><select id="unlabeled"><option value="0">All</option><option value="1">Unlabeled only</option></select></label>
+      <button id="load" class="primary">Load</button>
+    </div>
+  </header>
+  <main>
+    <aside class="list" id="list"></aside>
+    <section class="viewer">
+      <img id="image" alt="">
+      <div class="meta" id="meta"></div>
+      <div class="actions">
+        <button id="prev">Previous</button>
+        <button id="next">Next</button>
+      </div>
+    </section>
+    <section class="form">
+      <h2 style="margin-top:0">Your Interpretation</h2>
+      <div class="grid2">
+        <label>Round bales visible <input id="round_bales_visible" type="number" min="0" max="10"></label>
+        <label>Bale equivalents remaining <input id="bale_equivalents_remaining" type="number" min="0" max="10" step="0.1"></label>
+        <label>Estimated hay days remaining <input id="hay_days_remaining" type="number" min="0" max="30" step="0.5"></label>
+        <label>Cattle count <input id="cattle_count" type="number" min="0" max="200"></label>
+      </div>
+      <h3>Bale Remaining Percent</h3>
+      <div class="grid4">
+        <label>Bale 1 <input id="bale_1_remaining_percent" type="number" min="0" max="100"></label>
+        <label>Bale 2 <input id="bale_2_remaining_percent" type="number" min="0" max="100"></label>
+        <label>Bale 3 <input id="bale_3_remaining_percent" type="number" min="0" max="100"></label>
+        <label>Bale 4 <input id="bale_4_remaining_percent" type="number" min="0" max="100"></label>
+      </div>
+      <h3>Flags</h3>
+      <div class="checks">
+        <label><input id="cattle_present" type="checkbox"> Cattle present</label>
+        <label><input id="new_bales_put_out" type="checkbox"> New bales put out</label>
+        <label><input id="poor_visibility" type="checkbox"> Poor visibility</label>
+      </div>
+      <h3>Odd Sightings</h3>
+      <div class="checks" id="odd_sightings">
+        <label><input type="checkbox" value="person"> Person</label>
+        <label><input type="checkbox" value="vehicle"> Vehicle</label>
+        <label><input type="checkbox" value="deer"> Deer</label>
+        <label><input type="checkbox" value="hog"> Hog</label>
+        <label><input type="checkbox" value="equipment"> Equipment</label>
+        <label><input type="checkbox" value="camera_blocked"> Camera blocked</label>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <label>Visibility
+          <select id="visibility">
+            <option value="clear">Clear</option>
+            <option value="dim">Dim</option>
+            <option value="night">Night</option>
+            <option value="rain">Rain</option>
+            <option value="blocked">Blocked</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        <label>Label confidence
+          <select id="label_confidence">
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+      </div>
+      <label style="margin-top:12px">Notes <textarea id="notes" rows="5" placeholder="Example: three fresh bales, cows not in frame, bale 2 mostly consumed"></textarea></label>
+      <div class="actions">
+        <button id="save" class="primary">Save Label</button>
+        <button id="clear">Clear Form</button>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+  </main>
+  <script>
+    let images = [];
+    let index = 0;
+    const fields = [
+      'round_bales_visible', 'bale_equivalents_remaining', 'hay_days_remaining', 'cattle_count',
+      'bale_1_remaining_percent', 'bale_2_remaining_percent', 'bale_3_remaining_percent', 'bale_4_remaining_percent',
+      'visibility', 'label_confidence', 'notes'
+    ];
+    const checks = ['cattle_present', 'new_bales_put_out', 'poor_visibility'];
+
+    function $(id) { return document.getElementById(id); }
+    function current() { return images[index]; }
+    function fmtDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    }
+    function setStatus(text) { $('status').textContent = text || ''; }
+
+    async function loadImages() {
+      const params = new URLSearchParams({
+        start: $('start').value,
+        end: $('end').value,
+        limit: $('limit').value || '100',
+        unlabeled: $('unlabeled').value
+      });
+      const response = await fetch('/api/images?' + params.toString());
+      images = await response.json();
+      index = 0;
+      renderList();
+      renderImage();
+      setStatus(`${images.length} images loaded`);
+    }
+
+    function renderList() {
+      $('list').innerHTML = images.map((image, i) => {
+        const labeled = image.label ? '<span class="badge">labeled</span>' : '<span>unlabeled</span>';
+        return `<div class="item ${i === index ? 'active' : ''}" data-index="${i}">
+          <img src="${image.public_url}" alt="">
+          <div><strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''} ${labeled}</span></div>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('.item').forEach(node => {
+        node.addEventListener('click', () => {
+          index = Number(node.dataset.index);
+          renderList();
+          renderImage();
+        });
+      });
+    }
+
+    function clearForm() {
+      fields.forEach(id => { $(id).value = ''; });
+      $('visibility').value = 'clear';
+      $('label_confidence').value = 'high';
+      checks.forEach(id => { $(id).checked = false; });
+      document.querySelectorAll('#odd_sightings input').forEach(node => { node.checked = false; });
+    }
+
+    function loadLabel(label) {
+      clearForm();
+      if (!label) return;
+      fields.forEach(id => {
+        if (label[id] !== undefined && label[id] !== null) $(id).value = label[id];
+      });
+      checks.forEach(id => { $(id).checked = Boolean(label[id]); });
+      const odd = new Set(label.odd_sightings || []);
+      document.querySelectorAll('#odd_sightings input').forEach(node => { node.checked = odd.has(node.value); });
+    }
+
+    function renderImage() {
+      const image = current();
+      if (!image) {
+        $('image').removeAttribute('src');
+        $('meta').textContent = 'No images loaded';
+        clearForm();
+        return;
+      }
+      $('image').src = image.public_url;
+      $('image').alt = image.path;
+      $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${image.path}</span>`;
+      loadLabel(image.label);
+    }
+
+    function numberValue(id) {
+      const value = $(id).value;
+      return value === '' ? null : Number(value);
+    }
+
+    function buildPayload() {
+      const image = current();
+      const odd = [...document.querySelectorAll('#odd_sightings input:checked')].map(node => node.value);
+      return {
+        path: image.path,
+        source_path: image.source_path || null,
+        device: image.device,
+        camera_title: image.camera_title,
+        captured_at: image.captured_at,
+        temperature_text: image.temperature_text || null,
+        round_bales_visible: numberValue('round_bales_visible'),
+        bale_1_remaining_percent: numberValue('bale_1_remaining_percent'),
+        bale_2_remaining_percent: numberValue('bale_2_remaining_percent'),
+        bale_3_remaining_percent: numberValue('bale_3_remaining_percent'),
+        bale_4_remaining_percent: numberValue('bale_4_remaining_percent'),
+        bale_equivalents_remaining: numberValue('bale_equivalents_remaining'),
+        hay_days_remaining: numberValue('hay_days_remaining'),
+        cattle_present: $('cattle_present').checked,
+        cattle_count: numberValue('cattle_count'),
+        new_bales_put_out: $('new_bales_put_out').checked,
+        poor_visibility: $('poor_visibility').checked,
+        odd_sightings: odd,
+        visibility: $('visibility').value,
+        label_confidence: $('label_confidence').value,
+        notes: $('notes').value.trim()
+      };
+    }
+
+    async function saveLabel() {
+      if (!current()) return;
+      const response = await fetch('/api/label', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(buildPayload())
+      });
+      if (!response.ok) {
+        setStatus(await response.text());
+        return;
+      }
+      const saved = await response.json();
+      images[index].label = saved;
+      renderList();
+      setStatus('Saved');
+    }
+
+    $('load').addEventListener('click', loadImages);
+    $('save').addEventListener('click', saveLabel);
+    $('clear').addEventListener('click', clearForm);
+    $('prev').addEventListener('click', () => { if (index > 0) { index -= 1; renderList(); renderImage(); } });
+    $('next').addEventListener('click', () => { if (index < images.length - 1) { index += 1; renderList(); renderImage(); } });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'ArrowLeft') $('prev').click();
+      if (event.key === 'ArrowRight') $('next').click();
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') { event.preventDefault(); saveLabel(); }
+    });
+    loadImages();
+  </script>
+</body>
+</html>"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    index: ImageIndex
+    labels: LabelStore
+
+    def send_json(self, payload: Any, status: int = HTTPStatus.OK) -> None:
+        data = json.dumps(payload, sort_keys=True).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_text(self, text: str, status: int = HTTPStatus.OK, content_type: str = "text/plain") -> None:
+        data = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path == "/":
+            self.send_text(html_page(), content_type="text/html")
+            return
+        if parsed.path == "/api/images":
+            params = parse_qs(parsed.query)
+            self.send_json(self.index.query(params, self.labels))
+            return
+        if parsed.path == "/api/reload":
+            self.index.reload()
+            self.send_json({"ok": True, "count": len(self.index.images)})
+            return
+        self.send_text(f"Not found: {html.escape(parsed.path)}", status=HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/label":
+            self.send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            saved = self.labels.upsert(payload)
+        except Exception as exc:  # noqa: BLE001
+            self.send_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.send_json(saved)
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"{self.address_string()} - {fmt % args}")
+
+
+def main() -> int:
+    args = parse_args()
+    branding.load_env_file(args.env)
+    client = branding.SupabaseRest(
+        branding.require_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
+        branding.require_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"),
+    )
+    args.data_dir.mkdir(parents=True, exist_ok=True)
+    Handler.index = ImageIndex(client, args.manifest_path)
+    Handler.labels = LabelStore(args.data_dir)
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Pastucha Hay labeler: http://{args.host}:{args.port}/")
+    print(f"Images indexed: {len(Handler.index.images)}")
+    print(f"Data dir: {args.data_dir}")
+    server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,155 @@
+# Pastucha Hay AutoResearch Program
+
+## Purpose
+
+Pastucha Hay (`FLEX-M-MGE4`) is not a generic pasture camera. Its job is to watch
+the round-bale feeding area for SDCO cattle and produce feed intelligence:
+
+- how many round bales are visible
+- how much usable hay remains
+- whether new bales were placed
+- how many days of hay likely remain
+- cattle pressure around the hay
+- odd sightings such as people, vehicles, deer, hogs, or equipment
+
+The image overlay remains the source of truth for capture date, time, and
+temperature. AutoResearch must not use file timestamps as truth.
+
+## Golden Label Goal
+
+Travis reviews a range of Pastucha Hay images and creates the golden dataset.
+These labels are the judge for prompt/model work.
+
+Golden labels are stored at:
+
+```text
+/home/travis/tophand-instances/sdco/research/pastucha-hay/golden_labels.jsonl
+/home/travis/tophand-instances/sdco/research/pastucha-hay/golden_labels.latest.json
+```
+
+Each label should capture:
+
+- `round_bales_visible`
+- `bale_1_remaining_percent` through `bale_4_remaining_percent`
+- `bale_equivalents_remaining`
+- `hay_days_remaining`
+- `new_bales_put_out`
+- `cattle_present`
+- `cattle_count`
+- `odd_sightings`
+- `visibility`
+- `label_confidence`
+- `notes`
+
+## Labeling UI
+
+Run on 5090:
+
+```bash
+cd /home/travis/tophand-instances/sdco
+python3 tools/pastucha_hay_labeler.py \
+  --env /home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env \
+  --host 0.0.0.0 \
+  --port 8771
+```
+
+Then open:
+
+```text
+http://100.66.5.91:8771/
+```
+
+The UI reads `tophand-branded-images/manifest.json`, filters to
+`FLEX-M-MGE4`, and writes labels locally on 5090.
+
+## Two Vantage Points
+
+Every AutoResearch trial can analyze each image from two views:
+
+- `full`: scene context, cattle, people, vehicles, deer/hogs, visibility
+- `hay_zone`: upper scene crop with the TOPHAND overlay removed, focused on bale
+  count and hay condition
+
+Future improvement: manually calibrate a tighter ROI for Pastucha Hay if the
+camera framing stays stable.
+
+## Candidate Models
+
+Initial model pool on 5090:
+
+- `qwen2.5vl:32b`
+- `gemma4:31b`
+- `qwen3-vl:latest`
+- `llava:34b`
+
+Do not optimize for cost first. Optimize for correctness and useful ranch
+judgment.
+
+## Prompt Families
+
+The first AutoResearch run uses:
+
+- `hay_strict_json`: concise structured extraction
+- `ranch_hand_estimator`: ranch-context interpretation with bale equivalents
+- `two_step_observe_decide`: observations first, final JSON second
+
+Each prompt must return strict JSON so it can be scored.
+
+## Scoring
+
+Each model/prompt/view candidate is scored against the golden labels:
+
+- bale count absolute error
+- bale-equivalent absolute error
+- hay-days absolute error
+- cattle-count absolute error
+- cattle-present accuracy
+- new-bales event accuracy
+- odd-sighting precision/recall
+- invalid JSON rate
+
+Primary score is lower-is-better. Invalid JSON receives a heavy penalty.
+
+## Commands
+
+Run a small research pass:
+
+```bash
+cd /home/travis/tophand-instances/sdco
+python3 tools/pastucha_hay_autoresearch.py \
+  --env /home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env \
+  --labels /home/travis/tophand-instances/sdco/research/pastucha-hay/golden_labels.latest.json \
+  --limit 20 \
+  --models qwen2.5vl:32b qwen3-vl:latest gemma4:31b
+```
+
+Outputs:
+
+```text
+/home/travis/tophand-instances/sdco/research/pastucha-hay/candidate_outputs/
+/home/travis/tophand-instances/sdco/research/pastucha-hay/eval_results/
+```
+
+## Production Path
+
+Once a prompt/model pair wins, write Pastucha Hay intelligence into each branded
+image sidecar:
+
+```json
+{
+  "analysis": {
+    "hay": {
+      "round_bales_visible": 3,
+      "bale_equivalents_remaining": 1.6,
+      "hay_days_remaining": 3,
+      "cattle_present": true,
+      "cattle_count": 7,
+      "odd_sightings": [],
+      "confidence_score": 0.86
+    }
+  }
+}
+```
+
+Then publish `manifest.json` so RanchView can show hay-specific chips and later
+filter/report views.
