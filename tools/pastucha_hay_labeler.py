@@ -80,7 +80,36 @@ class LabelStore:
         self.data_dir = data_dir
         self.latest_path = data_dir / "golden_labels.latest.json"
         self.jsonl_path = data_dir / "golden_labels.jsonl"
-        self.latest: dict[str, Any] = read_json(self.latest_path, {})
+        self.latest: dict[str, Any] = self.canonicalize(read_json(self.latest_path, {}))
+
+    @staticmethod
+    def label_key(payload: dict[str, Any]) -> str:
+        return str(payload.get("source_path") or payload.get("path") or "")
+
+    @staticmethod
+    def is_newer(candidate: dict[str, Any], current: dict[str, Any]) -> bool:
+        candidate_time = parse_time(candidate.get("updated_at") or candidate.get("captured_at"))
+        current_time = parse_time(current.get("updated_at") or current.get("captured_at"))
+        return candidate_time >= current_time
+
+    def canonicalize(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+        canonical: dict[str, Any] = {}
+        changed = False
+        for fallback_key, value in payload.items():
+            if not isinstance(value, dict):
+                continue
+            row = dict(value)
+            key = self.label_key(row) or str(fallback_key)
+            if key != fallback_key:
+                changed = True
+            existing = canonical.get(key)
+            if existing is None or self.is_newer(row, existing):
+                canonical[key] = row
+        if changed:
+            write_json(self.latest_path, canonical)
+        return canonical
 
     def get(self, *image_paths: str | None) -> dict[str, Any] | None:
         for image_path in image_paths:
@@ -92,7 +121,7 @@ class LabelStore:
         return None
 
     def upsert(self, payload: dict[str, Any]) -> dict[str, Any]:
-        image_path = str(payload.get("path") or "")
+        image_path = self.label_key(payload)
         if not image_path:
             raise ValueError("Missing image path")
         now = dt.datetime.now(dt.UTC).isoformat()

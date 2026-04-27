@@ -102,7 +102,9 @@ fallback for frames Tesseract cannot parse. The labeler ignores raw source queue
 rows unless `overlay_verified` is true, `captured_at` is present, and
 `capture_time_source` starts with `image_overlay_`. Filename timestamps are only
 candidate hints and cross-checks; training labels use the printed image overlay
-date/time.
+date/time. If an extracted overlay time wildly disagrees with the filename hint,
+the row is retried with VLM or held out for manual review rather than using the
+filename as truth.
 
 Golden labels are keyed to `source_path`, so labels made against raw source
 images still attach to later TOPHAND-branded copies.

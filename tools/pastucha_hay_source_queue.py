@@ -50,6 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vlm-timeout", type=int, default=90)
     parser.add_argument("--max-images", type=int)
     parser.add_argument("--sample-minutes", type=int, default=360, help="Keep at most one image per range/time bucket. Use 0 for every image.")
+    parser.add_argument(
+        "--max-filename-delta-hours",
+        type=float,
+        default=18.0,
+        help="Hold out overlay reads that differ too far from the filename capture hint.",
+    )
     return parser.parse_args()
 
 
@@ -95,9 +101,28 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def overlay_is_usable(overlay: dict[str, Any]) -> bool:
+def overlay_delta_seconds(overlay: dict[str, Any], expected: dt.datetime | None) -> int | None:
+    if not expected or not overlay.get("captured_at"):
+        return None
+    captured = dt.datetime.fromisoformat(overlay["captured_at"])
+    return int(abs((captured - expected).total_seconds()))
+
+
+def overlay_is_usable(overlay: dict[str, Any], expected: dt.datetime | None, max_delta_seconds: float) -> bool:
     source = str(overlay.get("capture_time_source") or "")
-    return bool(overlay.get("overlay_verified") and overlay.get("captured_at") and source.startswith("image_overlay_"))
+    if not (overlay.get("overlay_verified") and overlay.get("captured_at") and source.startswith("image_overlay_")):
+        return False
+    delta = overlay.get("filename_overlay_delta_seconds")
+    if delta is None:
+        delta = overlay_delta_seconds(overlay, expected)
+    return delta is None or float(delta) <= max_delta_seconds
+
+
+def attach_filename_cross_check(overlay: dict[str, Any], expected: dt.datetime | None) -> dict[str, Any]:
+    if expected:
+        overlay["filename_expected_at"] = expected.isoformat()
+        overlay["filename_overlay_delta_seconds"] = overlay_delta_seconds(overlay, expected)
+    return overlay
 
 
 def normalize_ocr_text(text: str) -> str:
@@ -145,7 +170,7 @@ def parse_ocr_overlay(text: str, expected: dt.datetime | None = None) -> tuple[d
     return captured_at, f"{month:02d}/{day:02d}/{year}", f"{hour}:{minute} {ampm}M", temp_text
 
 
-def tesseract_overlay(image: Image.Image, expected: dt.datetime | None) -> dict[str, Any]:
+def tesseract_overlay(image: Image.Image, expected: dt.datetime | None, max_delta_seconds: float) -> dict[str, Any]:
     width, height = image.size
     errors: list[str] = []
     for crop_start in (0.955, 0.94, 0.965, 0.925):
@@ -171,7 +196,7 @@ def tesseract_overlay(image: Image.Image, expected: dt.datetime | None) -> dict[
             continue
         try:
             captured_at, date_text, time_text, temp_text = parse_ocr_overlay(raw_text, expected)
-            return {
+            overlay = {
                 "overlay_verified": True,
                 "capture_time_source": "image_overlay_tesseract",
                 "captured_at": captured_at.isoformat(),
@@ -181,6 +206,13 @@ def tesseract_overlay(image: Image.Image, expected: dt.datetime | None) -> dict[
                 "overlay_raw_text": raw_text,
                 "overlay_crop_start": crop_start,
             }
+            attach_filename_cross_check(overlay, expected)
+            if not overlay_is_usable(overlay, expected, max_delta_seconds):
+                raise ValueError(
+                    "OCR overlay date/time differs from filename hint by "
+                    f"{overlay.get('filename_overlay_delta_seconds')} seconds"
+                )
+            return overlay
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{crop_start}: {exc}")
     raise ValueError("; ".join(errors[:4]))
@@ -214,21 +246,22 @@ def vlm_overlay(image: Image.Image, args: argparse.Namespace) -> dict[str, Any]:
 
 def extract_overlay(client: branding.SupabaseRest, source: branding.StorageObject, args: argparse.Namespace) -> dict[str, Any]:
     expected = filename_capture_local(source.path)
+    max_delta_seconds = args.max_filename_delta_hours * 3600
     original_bytes = client.download(args.source_bucket, source.path)
     image = ImageOps.exif_transpose(Image.open(io.BytesIO(original_bytes))).convert("RGB")
     try:
-        overlay = tesseract_overlay(image, expected)
+        overlay = tesseract_overlay(image, expected, max_delta_seconds)
     except Exception as tesseract_error:
         if not args.vlm_fallback:
             raise
         overlay = vlm_overlay(image, args)
         overlay["tesseract_error"] = str(tesseract_error)
-
-    captured = dt.datetime.fromisoformat(overlay["captured_at"])
-    if expected:
-        delta = abs((captured - expected).total_seconds())
-        overlay["filename_expected_at"] = expected.isoformat()
-        overlay["filename_overlay_delta_seconds"] = int(delta)
+        attach_filename_cross_check(overlay, expected)
+        if not overlay_is_usable(overlay, expected, max_delta_seconds):
+            raise ValueError(
+                "VLM overlay date/time differs from filename hint by "
+                f"{overlay.get('filename_overlay_delta_seconds')} seconds"
+            )
     return overlay
 
 
@@ -245,6 +278,7 @@ def main() -> int:
     source_objects = branding.list_source_objects(client, args.source_bucket, args.limit, args.min_bytes, {CAMERA_ID})
     cache_path = args.cache or (args.data_dir / "source_overlay_cache.json")
     cache = read_json(cache_path, {})
+    max_delta_seconds = args.max_filename_delta_hours * 3600
     images: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     processed = 0
@@ -265,7 +299,7 @@ def main() -> int:
             seen_buckets.add(bucket_key)
 
         cached = cache.get(source.path)
-        if isinstance(cached, dict) and overlay_is_usable(cached):
+        if isinstance(cached, dict) and overlay_is_usable(cached, expected_at, max_delta_seconds):
             overlay = cached
         else:
             if args.max_images is not None and processed >= args.max_images:
@@ -281,7 +315,7 @@ def main() -> int:
                 write_json(cache_path, cache)
                 continue
 
-        if not overlay_is_usable(overlay):
+        if not overlay_is_usable(overlay, expected_at, max_delta_seconds):
             failures.append(
                 {
                     "source_path": source.path,

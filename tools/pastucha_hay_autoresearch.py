@@ -149,6 +149,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS)
     parser.add_argument("--research-dir", type=Path, default=DEFAULT_RESEARCH_DIR)
     parser.add_argument("--bucket", default=branding.DEST_BUCKET)
+    parser.add_argument("--source-bucket", default=branding.SOURCE_BUCKET)
     parser.add_argument("--models", nargs="+", default=["qwen2.5vl:32b", "qwen3-vl:latest", "gemma4:31b"])
     parser.add_argument("--prompts", nargs="+", default=list(PROMPTS))
     parser.add_argument("--views", nargs="+", default=["full", "hay_zone"])
@@ -164,9 +165,34 @@ def load_labels(path: Path, limit: int) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     if not isinstance(data, dict):
         raise branding.WorkerError(f"Expected object in {path}")
-    rows = [value for value in data.values() if isinstance(value, dict) and value.get("device") == CAMERA_ID]
+    latest_by_source: dict[str, dict[str, Any]] = {}
+    for value in data.values():
+        if not isinstance(value, dict) or value.get("device") != CAMERA_ID:
+            continue
+        identity = str(value.get("source_path") or value.get("path") or "")
+        if not identity:
+            continue
+        existing = latest_by_source.get(identity)
+        if existing is None:
+            latest_by_source[identity] = value
+            continue
+        value_time = branding.parse_sort_time(value.get("updated_at") or value.get("captured_at"))
+        existing_time = branding.parse_sort_time(existing.get("updated_at") or existing.get("captured_at"))
+        if value_time >= existing_time:
+            latest_by_source[identity] = value
+    rows = list(latest_by_source.values())
     rows.sort(key=lambda row: branding.parse_sort_time(row.get("captured_at")), reverse=True)
     return rows[:limit]
+
+
+def label_storage_ref(label: dict[str, Any], args: argparse.Namespace) -> tuple[str, str]:
+    source_path = label.get("source_path")
+    if source_path:
+        return args.source_bucket, str(source_path)
+    path = str(label.get("path") or "")
+    if label.get("image_mode") == "source":
+        return args.source_bucket, path
+    return args.bucket, path
 
 
 def image_to_view_bytes(image_bytes: bytes, view: str, max_width: int) -> bytes:
@@ -395,7 +421,8 @@ def main() -> int:
     with output_path.open("a", encoding="utf-8") as handle:
         trial = 0
         for label in labels:
-            image_bytes = client.download(args.bucket, label["path"])
+            image_bucket, image_path = label_storage_ref(label, args)
+            image_bytes = client.download(image_bucket, image_path)
             view_bytes = {view: image_to_view_bytes(image_bytes, view, args.max_width) for view in args.views}
             for model in args.models:
                 for prompt_name in args.prompts:
@@ -423,6 +450,9 @@ def main() -> int:
                             "prompt_name": prompt_name,
                             "view": view,
                             "path": label["path"],
+                            "image_bucket": image_bucket,
+                            "image_path": image_path,
+                            "source_path": label.get("source_path"),
                             "captured_at": label.get("captured_at"),
                             "seconds": round(time.time() - started, 2),
                             "prediction": prediction,
