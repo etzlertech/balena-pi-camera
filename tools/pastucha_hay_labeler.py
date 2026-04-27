@@ -75,6 +75,100 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def numeric(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def compact_number(value: float | None, digits: int = 1) -> float | int | None:
+    if value is None:
+        return None
+    rounded = round(value, digits)
+    return int(rounded) if float(rounded).is_integer() else rounded
+
+
+def bale_equivalents(row: dict[str, Any]) -> float | None:
+    explicit = numeric(row.get("bale_equivalents_remaining"))
+    if explicit is not None:
+        return explicit
+    total = 0.0
+    found = False
+    for slot in range(1, 5):
+        percent = numeric(row.get(f"bale_{slot}_remaining_percent"))
+        if percent is not None:
+            found = True
+            total += max(0.0, percent) / 100.0
+    return total if found else None
+
+
+def round_bales_visible(row: dict[str, Any]) -> int | None:
+    explicit = numeric(row.get("round_bales_visible"))
+    if explicit is not None:
+        return int(round(explicit))
+    count = 0
+    found = False
+    for slot in range(1, 5):
+        percent = numeric(row.get(f"bale_{slot}_remaining_percent"))
+        present = bool(row.get(f"bale_{slot}_present"))
+        if present or (percent is not None and percent > 0):
+            count += 1
+            found = True
+    return count if found else None
+
+
+def no_bales_confirmed(row: dict[str, Any]) -> bool:
+    if row.get("no_bales_confirmed"):
+        return True
+    visible = round_bales_visible(row)
+    equivalent = bale_equivalents(row)
+    return visible == 0 and equivalent == 0
+
+
+def cattle_count(row: dict[str, Any]) -> int | None:
+    explicit = numeric(row.get("cattle_count"))
+    if explicit is not None:
+        return int(round(explicit))
+    parts = [numeric(row.get(key)) for key in ("cow_count", "calf_count", "bull_count")]
+    if all(value is None for value in parts):
+        return None
+    return int(round(sum(value or 0 for value in parts)))
+
+
+def label_bale_slots(row: dict[str, Any]) -> list[dict[str, Any]]:
+    slots = row.get("bale_slots") or row.get("bales") or []
+    if isinstance(slots, list) and slots:
+        return [slot for slot in slots if isinstance(slot, dict)]
+    output = []
+    for slot in range(1, 5):
+        percent = numeric(row.get(f"bale_{slot}_remaining_percent"))
+        present = bool(row.get(f"bale_{slot}_present")) or (percent is not None and percent > 0)
+        if not present and percent is None:
+            continue
+        output.append(
+            {
+                "slot": slot,
+                "present": present,
+                "location": row.get(f"bale_{slot}_location"),
+                "remaining_percent": compact_number(percent, 0),
+                "condition": row.get(f"bale_{slot}_condition"),
+                "color_quality": row.get(f"bale_{slot}_color_quality"),
+                "hay_ring_visible": bool(row.get(f"bale_{slot}_hay_ring_visible")),
+                "scatter_present": bool(row.get(f"bale_{slot}_scatter_present")),
+                "scatter_level": row.get(f"bale_{slot}_scatter_level"),
+                "visibility": row.get(f"bale_{slot}_visibility"),
+                "level_confidence": row.get(f"bale_{slot}_level_confidence"),
+                "occlusion_level": row.get(f"bale_{slot}_occlusion_level"),
+                "occluded_by": row.get(f"bale_{slot}_occluded_by"),
+            }
+        )
+    return output
+
+
 class LabelStore:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
@@ -131,6 +225,146 @@ class LabelStore:
         write_json(self.latest_path, self.latest)
         append_jsonl(self.jsonl_path, payload)
         return payload
+
+    def sorted_labels(self) -> list[dict[str, Any]]:
+        rows = [row for row in self.latest.values() if isinstance(row, dict) and row.get("captured_at")]
+        rows.sort(key=lambda row: parse_time(row.get("captured_at")))
+        return rows
+
+    def intelligence_from_label(
+        self,
+        label: dict[str, Any],
+        status: str = "human",
+        confidence_score: float = 1.0,
+        basis: str = "human label",
+    ) -> dict[str, Any]:
+        no_bales = no_bales_confirmed(label)
+        visible = round_bales_visible(label)
+        equivalent = bale_equivalents(label)
+        cattle = cattle_count(label)
+        if no_bales:
+            summary = "No bales confirmed"
+        elif equivalent is not None:
+            bale_word = "bale" if visible == 1 else "bales"
+            summary = f"{visible or 0} {bale_word}, about {compact_number(equivalent)} bale equivalents"
+        elif visible is not None:
+            bale_word = "bale" if visible == 1 else "bales"
+            summary = f"{visible} {bale_word} visible"
+        else:
+            summary = "Hay state needs review"
+        if cattle:
+            summary = f"{summary}; {cattle} cattle visible"
+        return {
+            "status": status,
+            "analysis_source": "human_label" if status == "human" else "timeline_draft",
+            "basis": basis,
+            "summary": summary,
+            "no_bales_confirmed": no_bales,
+            "round_bales_visible": visible,
+            "bale_equivalents_remaining": compact_number(equivalent),
+            "hay_days_remaining": compact_number(numeric(label.get("hay_days_remaining"))),
+            "new_bales_put_out": bool(label.get("new_bales_put_out")),
+            "cattle_present": bool(label.get("cattle_present")) or bool(cattle),
+            "cattle_count": cattle,
+            "cow_count": compact_number(numeric(label.get("cow_count")), 0),
+            "calf_count": compact_number(numeric(label.get("calf_count")), 0),
+            "bull_count": compact_number(numeric(label.get("bull_count")), 0),
+            "bale_slots": label_bale_slots(label),
+            "confidence_score": round(confidence_score, 2),
+        }
+
+    def draft_intelligence(self, image: dict[str, Any]) -> dict[str, Any]:
+        captured = parse_time(image.get("captured_at"))
+        labels = self.sorted_labels()
+        if not labels or captured == dt.datetime.min.replace(tzinfo=dt.UTC):
+            return {
+                "status": "needs_review",
+                "analysis_source": "timeline_draft",
+                "basis": "no nearby labels",
+                "summary": "Hay intelligence needs a human label",
+                "confidence_score": 0.1,
+            }
+
+        source_path = image.get("source_path") or image.get("path")
+        before = None
+        after = None
+        for label in labels:
+            if self.label_key(label) == source_path:
+                continue
+            label_time = parse_time(label.get("captured_at"))
+            if label_time <= captured:
+                before = label
+            elif after is None:
+                after = label
+                break
+
+        candidates = []
+        for direction, label in (("before", before), ("after", after)):
+            if label:
+                hours = abs((captured - parse_time(label.get("captured_at"))).total_seconds()) / 3600
+                candidates.append((hours, direction, label))
+        if not candidates:
+            return {
+                "status": "needs_review",
+                "analysis_source": "timeline_draft",
+                "basis": "no nearby labels",
+                "summary": "Hay intelligence needs a human label",
+                "confidence_score": 0.1,
+            }
+
+        nearest_hours, nearest_direction, nearest_label = sorted(candidates, key=lambda item: item[0])[0]
+        confidence = max(0.25, min(0.72, 0.78 - nearest_hours * 0.018))
+
+        if before and after:
+            before_time = parse_time(before.get("captured_at"))
+            after_time = parse_time(after.get("captured_at"))
+            span_hours = max((after_time - before_time).total_seconds() / 3600, 0.01)
+            before_hours = abs((captured - before_time).total_seconds()) / 3600
+            after_hours = abs((after_time - captured).total_seconds()) / 3600
+            before_eq = bale_equivalents(before)
+            after_eq = bale_equivalents(after)
+            before_no = no_bales_confirmed(before)
+            after_no = no_bales_confirmed(after)
+            if before_hours <= 36 and after_hours <= 36 and before_no and after_no:
+                draft = self.intelligence_from_label(before, "draft", 0.78, "nearby labels before and after both say no bales")
+                draft["summary"] = "Likely no bales; nearby labels agree"
+                draft["nearest_label_hours"] = compact_number(min(before_hours, after_hours))
+                return draft
+            if before_eq is not None and after_eq is not None and before_hours <= 48 and after_hours <= 48:
+                ratio = min(1.0, max(0.0, before_hours / span_hours))
+                estimate = before_eq + (after_eq - before_eq) * ratio
+                visible = round_bales_visible(before if before_hours <= after_hours else after)
+                no_bales = estimate <= 0.08 and before_no and after_no
+                draft = self.intelligence_from_label(nearest_label, "draft", min(0.76, confidence + 0.08), "interpolated between nearby labels")
+                draft["bale_equivalents_remaining"] = compact_number(max(0.0, estimate))
+                draft["round_bales_visible"] = 0 if no_bales else visible
+                draft["no_bales_confirmed"] = no_bales
+                draft["nearest_label_hours"] = compact_number(min(before_hours, after_hours))
+                if no_bales:
+                    draft["summary"] = "Draft: likely no bales from nearby labels"
+                else:
+                    draft["summary"] = f"Draft: about {compact_number(max(0.0, estimate))} bale equivalents from nearby labels"
+                return draft
+
+        draft = self.intelligence_from_label(
+            nearest_label,
+            "draft",
+            confidence,
+            f"copied from nearest {nearest_direction} label",
+        )
+        draft["nearest_label_hours"] = compact_number(nearest_hours)
+        if nearest_hours > 48:
+            draft["status"] = "needs_review"
+            draft["confidence_score"] = 0.2
+            draft["summary"] = "Needs review; nearest hay label is too far away"
+        else:
+            draft["summary"] = f"Draft: {draft['summary']}"
+        return draft
+
+    def hay_intelligence(self, image: dict[str, Any], label: dict[str, Any] | None) -> dict[str, Any]:
+        if label:
+            return self.intelligence_from_label(label)
+        return self.draft_intelligence(image)
 
 
 class ImageIndex:
@@ -210,6 +444,7 @@ class ImageIndex:
                 continue
             row = dict(image)
             row["label"] = existing
+            row["hay_intelligence"] = labels.hay_intelligence(row, existing)
             rows.append(row)
             if len(rows) >= limit:
                 break
@@ -306,6 +541,46 @@ def html_page() -> str:
       border-radius: 8px;
     }
     .meta { color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+    .hay-intel {
+      border: 1px solid rgba(214, 181, 109, .28);
+      background: rgba(214, 181, 109, .08);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .hay-intel.draft { border-color: rgba(73, 179, 90, .34); background: rgba(73, 179, 90, .08); }
+    .hay-intel.needs_review { border-color: rgba(200, 200, 200, .24); background: rgba(255, 255, 255, .05); }
+    .hay-intel-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 800;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .hay-intel-summary { font-size: 15px; font-weight: 700; }
+    .hay-intel-basis { color: var(--muted); font-size: 12px; }
+    .hay-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .hay-chip {
+      border: 1px solid rgba(214, 181, 109, .25);
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: #ead7a5;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(0, 0, 0, .16);
+    }
+    .item-hay {
+      color: #d7c28d;
+      font-size: 12px;
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .form {
       border-left: 1px solid var(--line);
       padding: 18px;
@@ -392,6 +667,7 @@ def html_page() -> str:
     <section class="viewer">
       <img id="image" alt="">
       <div class="meta" id="meta"></div>
+      <div id="hay_intel"></div>
       <div class="actions">
         <button id="prev">Previous</button>
         <button id="next">Next</button>
@@ -914,7 +1190,54 @@ def html_page() -> str:
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
     }
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+    function compact(value, suffix = '') {
+      if (value === null || value === undefined || value === '') return '';
+      const number = Number(value);
+      const text = Number.isNaN(number) ? String(value) : String(Math.round(number * 10) / 10);
+      return `${text}${suffix}`;
+    }
     function setStatus(text) { $('status').textContent = text || ''; }
+
+    function hayListText(intel) {
+      if (!intel) return '';
+      if (intel.no_bales_confirmed) return intel.status === 'human' ? 'Hay: no bales' : 'Draft: no bales';
+      if (intel.bale_equivalents_remaining !== null && intel.bale_equivalents_remaining !== undefined) {
+        return `${intel.status === 'human' ? 'Hay' : 'Draft'}: ${compact(intel.bale_equivalents_remaining)} bale eq`;
+      }
+      return intel.summary || '';
+    }
+
+    function renderHayIntelligence(intel) {
+      if (!intel) return '';
+      const statusText = intel.status === 'human' ? 'Human label' : intel.status === 'draft' ? 'Draft estimate' : 'Needs review';
+      const chips = [];
+      if (intel.no_bales_confirmed) chips.push('No bales');
+      else if (intel.round_bales_visible !== null && intel.round_bales_visible !== undefined) chips.push(`${intel.round_bales_visible} bales`);
+      if (intel.bale_equivalents_remaining !== null && intel.bale_equivalents_remaining !== undefined) chips.push(`${compact(intel.bale_equivalents_remaining)} bale eq`);
+      if (intel.hay_days_remaining !== null && intel.hay_days_remaining !== undefined) chips.push(`${compact(intel.hay_days_remaining)} days`);
+      if (intel.cattle_count) chips.push(`${intel.cattle_count} cattle`);
+      if (intel.new_bales_put_out) chips.push('New bales');
+      if (intel.confidence_score !== null && intel.confidence_score !== undefined) chips.push(`${Math.round(Number(intel.confidence_score) * 100)}% conf`);
+      const apply = intel.status === 'draft'
+        ? '<button id="apply_hay_intel" type="button">Use Draft</button>'
+        : '';
+      return `<div class="hay-intel ${escapeHtml(intel.status || '')}">
+        <div class="hay-intel-title"><span>Hay Intelligence</span><span>${escapeHtml(statusText)}</span></div>
+        <div class="hay-intel-summary">${escapeHtml(intel.summary || 'Hay state needs review')}</div>
+        <div class="hay-chips">${chips.map(chip => `<span class="hay-chip">${escapeHtml(chip)}</span>`).join('')}</div>
+        <div class="hay-intel-basis">${escapeHtml(intel.basis || '')}${intel.nearest_label_hours !== undefined ? ` · nearest label ${escapeHtml(compact(intel.nearest_label_hours, 'h'))}` : ''}</div>
+        ${apply}
+      </div>`;
+    }
 
     function applyRangePreset() {
       const value = $('range_preset').value;
@@ -944,9 +1267,10 @@ def html_page() -> str:
       $('list').innerHTML = images.map((image, i) => {
         const labeled = image.label ? '<span class="badge">labeled</span>' : '<span>unlabeled</span>';
         const mode = image.image_mode === 'source' ? '<span>source queue</span>' : '<span>TOPHAND</span>';
+        const hay = hayListText(image.hay_intelligence);
         return `<div class="item ${i === index ? 'active' : ''}" data-index="${i}">
           <img src="${image.public_url}" alt="">
-          <div><strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''} ${labeled}</span>${mode}</div>
+          <div><strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''} ${labeled}</span>${mode}<div class="item-hay">${escapeHtml(hay)}</div></div>
         </div>`;
       }).join('');
       document.querySelectorAll('.item').forEach(node => {
@@ -1033,8 +1357,54 @@ def html_page() -> str:
       $('image').alt = image.path;
       const mode = image.image_mode === 'source' ? 'raw source' : 'TOPHAND branded';
       const range = image.queue_range ? `<span>${image.queue_range}</span>` : '';
-      $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${mode}</span>${range}<span>${image.path}</span>`;
+      $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${mode}</span>${range}<span>${escapeHtml(image.path)}</span>`;
+      $('hay_intel').innerHTML = renderHayIntelligence(image.hay_intelligence);
+      const apply = $('apply_hay_intel');
+      if (apply) apply.addEventListener('click', () => applyHayIntelligence(image.hay_intelligence));
       loadLabel(image.label);
+    }
+
+    function applyHayIntelligence(intel) {
+      if (!intel) return;
+      clearForm();
+      $('no_bales_confirmed').checked = Boolean(intel.no_bales_confirmed);
+      if (intel.round_bales_visible !== null && intel.round_bales_visible !== undefined) $('round_bales_visible').value = intel.round_bales_visible;
+      if (intel.bale_equivalents_remaining !== null && intel.bale_equivalents_remaining !== undefined) $('bale_equivalents_remaining').value = intel.bale_equivalents_remaining;
+      if (intel.hay_days_remaining !== null && intel.hay_days_remaining !== undefined) $('hay_days_remaining').value = intel.hay_days_remaining;
+      $('cattle_present').checked = Boolean(intel.cattle_present);
+      if (intel.cattle_count !== null && intel.cattle_count !== undefined) $('cattle_count').value = intel.cattle_count || '';
+      if (intel.cow_count !== null && intel.cow_count !== undefined) $('cow_count').value = intel.cow_count || '';
+      if (intel.calf_count !== null && intel.calf_count !== undefined) $('calf_count').value = intel.calf_count || '';
+      if (intel.bull_count !== null && intel.bull_count !== undefined) $('bull_count').value = intel.bull_count || '';
+      $('new_bales_put_out').checked = Boolean(intel.new_bales_put_out);
+      (intel.bale_slots || []).forEach(slotIntel => {
+        const slot = Number(slotIntel.slot);
+        if (!baleIds.includes(slot)) return;
+        const mappings = {
+          present: 'present',
+          location: 'location',
+          remaining_percent: 'remaining_percent',
+          condition: 'condition',
+          color_quality: 'color_quality',
+          hay_ring_visible: 'hay_ring_visible',
+          scatter_present: 'scatter_present',
+          scatter_level: 'scatter_level',
+          visibility: 'visibility',
+          level_confidence: 'level_confidence',
+          occlusion_level: 'occlusion_level',
+          occluded_by: 'occluded_by'
+        };
+        Object.entries(mappings).forEach(([source, suffix]) => {
+          const id = `bale_${slot}_${suffix}`;
+          if (!$(id) || slotIntel[source] === undefined || slotIntel[source] === null) return;
+          if ($(id).type === 'checkbox') $(id).checked = Boolean(slotIntel[source]);
+          else $(id).value = slotIntel[source];
+        });
+      });
+      $('notes').value = `Draft hay intelligence applied. ${intel.summary || ''}`.trim();
+      updateDerivedFields();
+      updateNoBalesState();
+      setStatus('Draft applied. Review the image before saving.');
     }
 
     function numberValue(id) {

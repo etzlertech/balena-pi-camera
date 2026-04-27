@@ -42,11 +42,15 @@ human_count: integer
 vehicles_detected: boolean
 vehicle_types: array of short lowercase strings
 water_present: boolean
+water_source_type: "pond" | "trough" | "tank" | "creek" | "wetland" | "unknown" | null
 water_level: "high" | "normal" | "low" | "empty" | "unknown" | null
+water_level_percentage: integer 0-100 or null
+water_quality: "clear" | "muddy" | "algae" | "stagnant" | "turbid" | "unknown" | null
 gate_present: boolean
 gate_status: "open" | "closed" | "unknown" | null
 hay_bales_present: boolean
 infrastructure: array of short lowercase strings
+stable_scene_attributes: array of stable source/landmark attributes
 scene: 2-5 words
 summary: 3-8 words, useful as a gallery chip
 alert_priority: "none" | "low" | "medium" | "high"
@@ -126,6 +130,18 @@ def int_value(value: Any) -> int:
         return 0
 
 
+def optional_percent(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+    if not match:
+        return None
+    try:
+        return max(0, min(100, int(round(float(match.group(0))))))
+    except ValueError:
+        return None
+
+
 def list_value(value: Any) -> list[str]:
     if value is None:
         return []
@@ -180,11 +196,23 @@ def normalize_analysis(raw: dict[str, Any], model: str, seconds: float) -> dict[
         "vehicles_detected": vehicles_detected,
         "vehicle_types": vehicle_types,
         "water_present": bool_value(raw.get("water_present")),
+        "water_source_type": enum_value(
+            raw.get("water_source_type"),
+            {"pond", "trough", "tank", "creek", "wetland", "unknown"},
+            "unknown",
+        ),
         "water_level": enum_value(raw.get("water_level"), {"high", "normal", "low", "empty", "unknown"}, "unknown"),
+        "water_level_percentage": optional_percent(raw.get("water_level_percentage")),
+        "water_quality": enum_value(
+            raw.get("water_quality") or raw.get("water_clarity"),
+            {"clear", "muddy", "algae", "stagnant", "turbid", "unknown"},
+            "unknown",
+        ),
         "gate_present": bool_value(raw.get("gate_present")),
         "gate_status": enum_value(raw.get("gate_status"), {"open", "closed", "unknown"}, None),
         "hay_bales_present": bool_value(raw.get("hay_bales_present")),
         "infrastructure": list_value(raw.get("infrastructure")),
+        "stable_scene_attributes": list_value(raw.get("stable_scene_attributes")),
         "scene": text_value(raw.get("scene"), 36),
         "summary": text_value(raw.get("summary") or raw.get("short_summary"), 52),
         "alert_priority": enum_value(raw.get("alert_priority"), {"none", "low", "medium", "high"}, "none"),

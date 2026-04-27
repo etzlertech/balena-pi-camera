@@ -287,6 +287,13 @@
             'YV': 'Donna Trough 2'
         };
 
+        const sceneProfiles = {
+            'FLEX-M-MGE4': { type: 'hay', label: 'Hay feeding area' },
+            'QC': { type: 'water', label: 'Pond watch' },
+            'QN': { type: 'water', label: 'Trough watch' },
+            'YV': { type: 'water', label: 'Trough watch' }
+        };
+
         // Devices to exclude from viewer
         const excludedDevices = ['Untitled folder', 'test'];
 
@@ -559,6 +566,14 @@
             return `${Math.round(number)}%`;
         }
 
+        function compactNumber(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const number = Number(value);
+            if (Number.isNaN(number)) return String(value);
+            const rounded = Math.round(number * 10) / 10;
+            return String(Number.isInteger(rounded) ? Math.round(rounded) : rounded);
+        }
+
         function hasKnownValue(value) {
             if (value === null || value === undefined || value === '') return false;
             return !['unknown', 'none', 'null', 'false'].includes(String(value).toLowerCase());
@@ -567,9 +582,27 @@
         function buildVlmTags(image) {
             const analysis = image.analysis || {};
             const tags = [];
+            const sceneProfile = sceneProfiles[image.device] || null;
 
             if (image.temperature_text) {
                 tags.push(image.temperature_text);
+            }
+
+            const hay = analysis.hay || analysis.hay_intelligence || null;
+            if (hay) {
+                if (hay.no_bales_confirmed) tags.push('No bales');
+                else if (hay.round_bales_visible !== undefined && hay.round_bales_visible !== null) tags.push(`${hay.round_bales_visible} bales`);
+                if (hay.bale_equivalents_remaining !== undefined && hay.bale_equivalents_remaining !== null) {
+                    tags.push(`${compactNumber(hay.bale_equivalents_remaining)} bale eq`);
+                }
+            } else if (sceneProfile?.type === 'hay' && analysis.hay_bales_present) {
+                tags.push('Hay visible');
+            } else if (sceneProfile?.type === 'hay') {
+                tags.push(sceneProfile.label);
+            }
+
+            if (sceneProfile?.type === 'water' && !analysis.water_present && !hasKnownValue(analysis.water_level)) {
+                tags.push(sceneProfile.label);
             }
 
             const animalSpecies = normalizeSpecies(analysis.animal_species || analysis.species);
@@ -591,6 +624,14 @@
             if (analysis.water_present || hasWaterLevel || (analysis.water_level_percentage !== undefined && analysis.water_level_percentage !== null)) {
                 const waterLevel = compactPercent(analysis.water_level_percentage) || titleCase(analysis.water_level);
                 tags.push(hasKnownValue(waterLevel) ? `Water ${waterLevel}` : 'Water');
+            }
+
+            if (hasKnownValue(analysis.water_quality)) {
+                tags.push(`Water ${titleCase(analysis.water_quality)}`);
+            }
+
+            if (hasKnownValue(analysis.water_source_type) && sceneProfile?.type === 'water') {
+                tags.push(titleCase(analysis.water_source_type));
             }
 
             if (hasKnownValue(analysis.gate_status)) {
