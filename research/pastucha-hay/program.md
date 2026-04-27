@@ -29,13 +29,27 @@ Golden labels are stored at:
 
 Each label should capture:
 
+- `no_bales_confirmed`
 - `round_bales_visible`
-- `bale_1_remaining_percent` through `bale_4_remaining_percent`
+- per-bale-slot fields for `bale_1` through `bale_4`:
+  - `present`
+  - `location` (`left`, `middle`, `right`, etc.)
+  - `remaining_percent`
+  - `condition`
+  - `color_quality`
+  - `hay_ring_visible`
+  - `scatter_present`
+  - `scatter_level`
+  - `scatter_bale_equivalent`
+  - `visibility` / occlusion
 - `bale_equivalents_remaining`
 - `hay_days_remaining`
+- scene-level `hay_scatter_present`, `hay_scatter_level`,
+  `hay_scatter_bale_equivalent`, and `hay_color_quality`
 - `new_bales_put_out`
 - `cattle_present`
 - `cattle_count`
+- `cow_count`, `calf_count`, `bull_count`
 - `odd_sightings`
 - `visibility`
 - `label_confidence`
@@ -103,7 +117,9 @@ Each model/prompt/view candidate is scored against the golden labels:
 - bale-equivalent absolute error
 - hay-days absolute error
 - cattle-count absolute error
+- cow-count, calf-count, and bull-count error
 - cattle-present accuracy
+- no-bales-confirmed accuracy
 - new-bales event accuracy
 - odd-sighting precision/recall
 - invalid JSON rate
@@ -139,11 +155,34 @@ image sidecar:
 {
   "analysis": {
     "hay": {
+      "no_bales_confirmed": false,
       "round_bales_visible": 3,
+      "bales": [
+        {
+          "slot": 1,
+          "location": "left",
+          "present": true,
+          "remaining_percent": 80,
+          "condition": "mostly_full",
+          "color_quality": "normal",
+          "hay_ring_visible": true,
+          "scatter_present": true,
+          "scatter_level": "light",
+          "scatter_bale_equivalent": 0.03,
+          "visibility": "clear"
+        }
+      ],
       "bale_equivalents_remaining": 1.6,
       "hay_days_remaining": 3,
+      "hay_scatter_present": true,
+      "hay_scatter_level": "light",
+      "hay_scatter_bale_equivalent": 0.05,
+      "hay_color_quality": "normal",
       "cattle_present": true,
       "cattle_count": 7,
+      "cow_count": 5,
+      "calf_count": 2,
+      "bull_count": 0,
       "odd_sightings": [],
       "confidence_score": 0.86
     }

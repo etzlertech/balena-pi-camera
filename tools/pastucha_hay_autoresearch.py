@@ -38,14 +38,34 @@ Ignore the TOPHAND black overlay bar. Use the scene only.
 
 Return strict JSON only:
 {
+  "no_bales_confirmed": boolean,
   "round_bales_visible": integer,
   "bales": [
-    {"remaining_percent": integer 0-100, "condition": "new|mostly_full|half|low|gone|unknown"}
+    {
+      "slot": integer,
+      "location": "left|middle|right|far_left|far_right|background|foreground|unknown",
+      "present": boolean,
+      "remaining_percent": integer 0-100,
+      "condition": "new|mostly_full|half|low|collapsed|scattered|gone|unknown",
+      "color_quality": "normal|bright_fresh|dark_weathered|mixed|unknown",
+      "hay_ring_visible": boolean,
+      "scatter_present": boolean,
+      "scatter_level": "none|trace|light|moderate|heavy|unknown",
+      "scatter_bale_equivalent": number 0-1,
+      "visibility": "clear|partly_occluded|mostly_occluded|night_uncertain|unknown"
+    }
   ],
   "bale_equivalents_remaining": number,
   "hay_days_remaining": number|null,
   "cattle_present": boolean,
   "cattle_count": integer,
+  "cow_count": integer,
+  "calf_count": integer,
+  "bull_count": integer,
+  "hay_scatter_present": boolean,
+  "hay_scatter_level": "none|trace|light|moderate|heavy|unknown",
+  "hay_scatter_bale_equivalent": number 0-1,
+  "hay_color_quality": "normal|bright_fresh|dark_weathered|mixed|unknown",
   "new_bales_put_out": boolean,
   "odd_sightings": array of "person|vehicle|deer|hog|equipment|camera_blocked",
   "visibility": "clear|dim|night|rain|blocked|unknown",
@@ -60,11 +80,16 @@ present, and whether anything unusual is in the frame. Ignore timestamps and
 printed overlay text.
 
 Return only valid JSON with:
-round_bales_visible, bales, bale_equivalents_remaining, hay_days_remaining,
-cattle_present, cattle_count, new_bales_put_out, odd_sightings, visibility,
-confidence_score, notes.
+no_bales_confirmed, round_bales_visible, bales, bale_equivalents_remaining,
+hay_days_remaining, cattle_present, cattle_count, cow_count, calf_count,
+bull_count, hay_scatter_present, hay_scatter_level,
+hay_scatter_bale_equivalent, hay_color_quality, new_bales_put_out,
+odd_sightings, visibility, confidence_score, notes.
 
 For bale equivalents, one untouched round bale is 1.0. A half-eaten bale is 0.5.
+Track left/middle/right bale slots separately, including hay ring visibility,
+hay color/quality, edible scatter around each bale, and whether the slot is
+occluded or uncertain.
 Do not hallucinate bales hidden outside the frame.""",
     "two_step_observe_decide": """Inspect this Pastucha Hay camera image in two steps, but output only final JSON.
 Step 1: observe visible round bales, cattle, people/vehicles/wildlife, visibility.
@@ -73,12 +98,32 @@ Ignore the TOPHAND overlay bar.
 
 Return strict JSON:
 {
+  "no_bales_confirmed": boolean,
   "round_bales_visible": integer,
-  "bales": [{"remaining_percent": integer, "condition": string}],
+  "bales": [{
+    "slot": integer,
+    "location": string,
+    "present": boolean,
+    "remaining_percent": integer,
+    "condition": string,
+    "color_quality": string,
+    "hay_ring_visible": boolean,
+    "scatter_present": boolean,
+    "scatter_level": string,
+    "scatter_bale_equivalent": number,
+    "visibility": string
+  }],
   "bale_equivalents_remaining": number,
   "hay_days_remaining": number|null,
   "cattle_present": boolean,
   "cattle_count": integer,
+  "cow_count": integer,
+  "calf_count": integer,
+  "bull_count": integer,
+  "hay_scatter_present": boolean,
+  "hay_scatter_level": string,
+  "hay_scatter_bale_equivalent": number,
+  "hay_color_quality": string,
   "new_bales_put_out": boolean,
   "odd_sightings": array,
   "visibility": string,
@@ -225,6 +270,13 @@ def prediction_bale_equivalents(prediction: dict[str, Any]) -> float:
     return round(total, 2)
 
 
+def animal_count(row: dict[str, Any]) -> float:
+    explicit = row.get("cattle_count")
+    if explicit is not None:
+        return number(explicit)
+    return number(row.get("cow_count")) + number(row.get("calf_count")) + number(row.get("bull_count"))
+
+
 def score_prediction(label: dict[str, Any], prediction: dict[str, Any], valid_json: bool) -> dict[str, Any]:
     if not valid_json:
         return {"score": 999.0, "invalid_json": 1}
@@ -237,8 +289,12 @@ def score_prediction(label: dict[str, Any], prediction: dict[str, Any], valid_js
     bale_count_error = abs(number(label.get("round_bales_visible")) - number(prediction.get("round_bales_visible")))
     bale_equiv_error = abs(label_bale_equivalents(label) - prediction_bale_equivalents(prediction))
     hay_days_error = abs(number(label.get("hay_days_remaining")) - number(prediction.get("hay_days_remaining")))
-    cattle_count_error = abs(number(label.get("cattle_count")) - number(prediction.get("cattle_count")))
+    cattle_count_error = abs(animal_count(label) - animal_count(prediction))
+    cow_count_error = abs(number(label.get("cow_count")) - number(prediction.get("cow_count")))
+    calf_count_error = abs(number(label.get("calf_count")) - number(prediction.get("calf_count")))
+    bull_count_error = abs(number(label.get("bull_count")) - number(prediction.get("bull_count")))
     cattle_present_error = 0 if boolish(label.get("cattle_present")) == boolish(prediction.get("cattle_present")) else 1
+    no_bales_error = 0 if boolish(label.get("no_bales_confirmed")) == boolish(prediction.get("no_bales_confirmed")) else 1
     new_bales_error = 0 if boolish(label.get("new_bales_put_out")) == boolish(prediction.get("new_bales_put_out")) else 1
 
     score = (
@@ -246,7 +302,9 @@ def score_prediction(label: dict[str, Any], prediction: dict[str, Any], valid_js
         + bale_equiv_error * 4.0
         + min(hay_days_error, 7) * 1.5
         + min(cattle_count_error, 20) * 0.5
+        + min(cow_count_error + calf_count_error + bull_count_error, 20) * 0.35
         + cattle_present_error * 2.0
+        + no_bales_error * 2.0
         + new_bales_error * 3.0
         + odd_false_negatives * 3.0
         + odd_false_positives * 1.5
@@ -258,7 +316,11 @@ def score_prediction(label: dict[str, Any], prediction: dict[str, Any], valid_js
         "bale_equiv_error": round(bale_equiv_error, 3),
         "hay_days_error": hay_days_error,
         "cattle_count_error": cattle_count_error,
+        "cow_count_error": cow_count_error,
+        "calf_count_error": calf_count_error,
+        "bull_count_error": bull_count_error,
         "cattle_present_error": cattle_present_error,
+        "no_bales_error": no_bales_error,
         "new_bales_error": new_bales_error,
         "odd_false_negatives": odd_false_negatives,
         "odd_false_positives": odd_false_positives,

@@ -90,7 +90,7 @@ class LabelStore:
             raise ValueError("Missing image path")
         now = dt.datetime.now(dt.UTC).isoformat()
         payload["updated_at"] = now
-        payload.setdefault("schema_version", "pastucha_hay_label_v1")
+        payload.setdefault("schema_version", "pastucha_hay_label_v3")
         self.latest[image_path] = payload
         write_json(self.latest_path, self.latest)
         append_jsonl(self.jsonl_path, payload)
@@ -244,7 +244,36 @@ def html_page() -> str:
       background: #1d1d1d;
     }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .bale-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .bale-slot {
+      background: var(--panel);
+      border: 1px solid #383838;
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .bale-slot h4 {
+      margin: 0;
+      color: var(--gold);
+      font-size: 13px;
+    }
+    .bale-slot .slot-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .bale-slot .slot-title label {
+      display: flex;
+      grid-auto-flow: column;
+      align-items: center;
+      gap: 6px;
+      color: var(--text);
+      font-size: 12px;
+    }
     .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
     .checks label {
       display: flex;
@@ -254,6 +283,8 @@ def html_page() -> str:
       padding: 8px 9px;
       border-radius: 6px;
     }
+    input[readonly] { opacity: .72; }
+    input:disabled, select:disabled, textarea:disabled { opacity: .48; }
     .actions { display: flex; gap: 10px; margin-top: 14px; }
     .status { color: var(--gold); min-height: 20px; margin-top: 10px; }
     @media (max-width: 1100px) {
@@ -288,22 +319,316 @@ def html_page() -> str:
     </section>
     <section class="form">
       <h2 style="margin-top:0">Your Interpretation</h2>
+      <div class="checks">
+        <label><input id="no_bales_confirmed" type="checkbox"> No bales confirmed</label>
+      </div>
       <div class="grid2">
         <label>Round bales visible <input id="round_bales_visible" type="number" min="0" max="10"></label>
         <label>Bale equivalents remaining <input id="bale_equivalents_remaining" type="number" min="0" max="10" step="0.1"></label>
         <label>Estimated hay days remaining <input id="hay_days_remaining" type="number" min="0" max="30" step="0.5"></label>
-        <label>Cattle count <input id="cattle_count" type="number" min="0" max="200"></label>
+        <label>Total cattle <input id="cattle_count" type="number" min="0" max="200" readonly></label>
       </div>
-      <h3>Bale Remaining Percent</h3>
-      <div class="grid4">
-        <label>Bale 1 <input id="bale_1_remaining_percent" type="number" min="0" max="100"></label>
-        <label>Bale 2 <input id="bale_2_remaining_percent" type="number" min="0" max="100"></label>
-        <label>Bale 3 <input id="bale_3_remaining_percent" type="number" min="0" max="100"></label>
-        <label>Bale 4 <input id="bale_4_remaining_percent" type="number" min="0" max="100"></label>
+      <h3>Animals</h3>
+      <div class="grid3">
+        <label>Cows <input id="cow_count" type="number" min="0" max="200"></label>
+        <label>Calves <input id="calf_count" type="number" min="0" max="200"></label>
+        <label>Bulls <input id="bull_count" type="number" min="0" max="20"></label>
+      </div>
+      <div class="checks">
+        <label><input id="cattle_present" type="checkbox"> Cattle present</label>
+      </div>
+      <h3>Bale Slots</h3>
+      <div class="bale-grid">
+        <div class="bale-slot">
+          <div class="slot-title">
+            <h4>Bale 1</h4>
+            <label><input id="bale_1_present" type="checkbox"> Present</label>
+          </div>
+          <label>Position
+            <select id="bale_1_location">
+              <option value="left">Left</option>
+              <option value="middle">Middle</option>
+              <option value="right">Right</option>
+              <option value="far_left">Far left</option>
+              <option value="far_right">Far right</option>
+              <option value="background">Background</option>
+              <option value="foreground">Foreground</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Remaining % <input id="bale_1_remaining_percent" type="number" min="0" max="100"></label>
+          <label>Condition
+            <select id="bale_1_condition">
+              <option value="unknown">Unknown</option>
+              <option value="new">New</option>
+              <option value="mostly_full">Mostly full</option>
+              <option value="half">Half</option>
+              <option value="low">Low</option>
+              <option value="collapsed">Collapsed</option>
+              <option value="scattered">Mostly scattered</option>
+              <option value="gone">Gone</option>
+            </select>
+          </label>
+          <label>Color / quality
+            <select id="bale_1_color_quality">
+              <option value="normal">Normal</option>
+              <option value="bright_fresh">Bright / fresh</option>
+              <option value="dark_weathered">Dark / weathered</option>
+              <option value="mixed">Mixed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <div class="checks">
+            <label><input id="bale_1_hay_ring_visible" type="checkbox"> Hay ring</label>
+            <label><input id="bale_1_scatter_present" type="checkbox"> Scatter</label>
+          </div>
+          <label>Scatter level
+            <select id="bale_1_scatter_level">
+              <option value="none">None</option>
+              <option value="trace">Trace</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Scatter bale equivalent <input id="bale_1_scatter_bale_equivalent" type="number" min="0" max="1" step="0.01"></label>
+          <label>Slot visibility
+            <select id="bale_1_visibility">
+              <option value="clear">Clear</option>
+              <option value="partly_occluded">Partly occluded</option>
+              <option value="mostly_occluded">Mostly occluded</option>
+              <option value="night_uncertain">Night uncertain</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+        </div>
+        <div class="bale-slot">
+          <div class="slot-title">
+            <h4>Bale 2</h4>
+            <label><input id="bale_2_present" type="checkbox"> Present</label>
+          </div>
+          <label>Position
+            <select id="bale_2_location">
+              <option value="left">Left</option>
+              <option value="middle">Middle</option>
+              <option value="right">Right</option>
+              <option value="far_left">Far left</option>
+              <option value="far_right">Far right</option>
+              <option value="background">Background</option>
+              <option value="foreground">Foreground</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Remaining % <input id="bale_2_remaining_percent" type="number" min="0" max="100"></label>
+          <label>Condition
+            <select id="bale_2_condition">
+              <option value="unknown">Unknown</option>
+              <option value="new">New</option>
+              <option value="mostly_full">Mostly full</option>
+              <option value="half">Half</option>
+              <option value="low">Low</option>
+              <option value="collapsed">Collapsed</option>
+              <option value="scattered">Mostly scattered</option>
+              <option value="gone">Gone</option>
+            </select>
+          </label>
+          <label>Color / quality
+            <select id="bale_2_color_quality">
+              <option value="normal">Normal</option>
+              <option value="bright_fresh">Bright / fresh</option>
+              <option value="dark_weathered">Dark / weathered</option>
+              <option value="mixed">Mixed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <div class="checks">
+            <label><input id="bale_2_hay_ring_visible" type="checkbox"> Hay ring</label>
+            <label><input id="bale_2_scatter_present" type="checkbox"> Scatter</label>
+          </div>
+          <label>Scatter level
+            <select id="bale_2_scatter_level">
+              <option value="none">None</option>
+              <option value="trace">Trace</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Scatter bale equivalent <input id="bale_2_scatter_bale_equivalent" type="number" min="0" max="1" step="0.01"></label>
+          <label>Slot visibility
+            <select id="bale_2_visibility">
+              <option value="clear">Clear</option>
+              <option value="partly_occluded">Partly occluded</option>
+              <option value="mostly_occluded">Mostly occluded</option>
+              <option value="night_uncertain">Night uncertain</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+        </div>
+        <div class="bale-slot">
+          <div class="slot-title">
+            <h4>Bale 3</h4>
+            <label><input id="bale_3_present" type="checkbox"> Present</label>
+          </div>
+          <label>Position
+            <select id="bale_3_location">
+              <option value="left">Left</option>
+              <option value="middle">Middle</option>
+              <option value="right">Right</option>
+              <option value="far_left">Far left</option>
+              <option value="far_right">Far right</option>
+              <option value="background">Background</option>
+              <option value="foreground">Foreground</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Remaining % <input id="bale_3_remaining_percent" type="number" min="0" max="100"></label>
+          <label>Condition
+            <select id="bale_3_condition">
+              <option value="unknown">Unknown</option>
+              <option value="new">New</option>
+              <option value="mostly_full">Mostly full</option>
+              <option value="half">Half</option>
+              <option value="low">Low</option>
+              <option value="collapsed">Collapsed</option>
+              <option value="scattered">Mostly scattered</option>
+              <option value="gone">Gone</option>
+            </select>
+          </label>
+          <label>Color / quality
+            <select id="bale_3_color_quality">
+              <option value="normal">Normal</option>
+              <option value="bright_fresh">Bright / fresh</option>
+              <option value="dark_weathered">Dark / weathered</option>
+              <option value="mixed">Mixed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <div class="checks">
+            <label><input id="bale_3_hay_ring_visible" type="checkbox"> Hay ring</label>
+            <label><input id="bale_3_scatter_present" type="checkbox"> Scatter</label>
+          </div>
+          <label>Scatter level
+            <select id="bale_3_scatter_level">
+              <option value="none">None</option>
+              <option value="trace">Trace</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Scatter bale equivalent <input id="bale_3_scatter_bale_equivalent" type="number" min="0" max="1" step="0.01"></label>
+          <label>Slot visibility
+            <select id="bale_3_visibility">
+              <option value="clear">Clear</option>
+              <option value="partly_occluded">Partly occluded</option>
+              <option value="mostly_occluded">Mostly occluded</option>
+              <option value="night_uncertain">Night uncertain</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+        </div>
+        <div class="bale-slot">
+          <div class="slot-title">
+            <h4>Bale 4</h4>
+            <label><input id="bale_4_present" type="checkbox"> Present</label>
+          </div>
+          <label>Position
+            <select id="bale_4_location">
+              <option value="unknown">Unknown</option>
+              <option value="left">Left</option>
+              <option value="middle">Middle</option>
+              <option value="right">Right</option>
+              <option value="far_left">Far left</option>
+              <option value="far_right">Far right</option>
+              <option value="background">Background</option>
+              <option value="foreground">Foreground</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>Remaining % <input id="bale_4_remaining_percent" type="number" min="0" max="100"></label>
+          <label>Condition
+            <select id="bale_4_condition">
+              <option value="unknown">Unknown</option>
+              <option value="new">New</option>
+              <option value="mostly_full">Mostly full</option>
+              <option value="half">Half</option>
+              <option value="low">Low</option>
+              <option value="collapsed">Collapsed</option>
+              <option value="scattered">Mostly scattered</option>
+              <option value="gone">Gone</option>
+            </select>
+          </label>
+          <label>Color / quality
+            <select id="bale_4_color_quality">
+              <option value="normal">Normal</option>
+              <option value="bright_fresh">Bright / fresh</option>
+              <option value="dark_weathered">Dark / weathered</option>
+              <option value="mixed">Mixed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <div class="checks">
+            <label><input id="bale_4_hay_ring_visible" type="checkbox"> Hay ring</label>
+            <label><input id="bale_4_scatter_present" type="checkbox"> Scatter</label>
+          </div>
+          <label>Scatter level
+            <select id="bale_4_scatter_level">
+              <option value="none">None</option>
+              <option value="trace">Trace</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Scatter bale equivalent <input id="bale_4_scatter_bale_equivalent" type="number" min="0" max="1" step="0.01"></label>
+          <label>Slot visibility
+            <select id="bale_4_visibility">
+              <option value="clear">Clear</option>
+              <option value="partly_occluded">Partly occluded</option>
+              <option value="mostly_occluded">Mostly occluded</option>
+              <option value="night_uncertain">Night uncertain</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Position note <input id="bale_4_position_note" type="text" maxlength="120"></label>
+        </div>
+      </div>
+      <h3>Scene Scatter / Residue</h3>
+      <div class="checks">
+        <label><input id="hay_scatter_present" type="checkbox"> Edible scatter visible</label>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <label>Scatter level
+          <select id="hay_scatter_level">
+            <option value="none">None</option>
+            <option value="trace">Trace</option>
+            <option value="light">Light</option>
+            <option value="moderate">Moderate</option>
+            <option value="heavy">Heavy</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        <label>Scatter bale equivalent <input id="hay_scatter_bale_equivalent" type="number" min="0" max="1" step="0.01"></label>
+      </div>
+      <h3>Overall Hay Quality</h3>
+      <div class="grid2">
+        <label>Hay color / quality
+          <select id="hay_color_quality">
+            <option value="normal">Normal coloration</option>
+            <option value="bright_fresh">Bright / fresh</option>
+            <option value="dark_weathered">Dark / weathered</option>
+            <option value="mixed">Mixed</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
       </div>
       <h3>Flags</h3>
       <div class="checks">
-        <label><input id="cattle_present" type="checkbox"> Cattle present</label>
         <label><input id="new_bales_put_out" type="checkbox"> New bales put out</label>
         <label><input id="poor_visibility" type="checkbox"> Poor visibility</label>
       </div>
@@ -346,12 +671,25 @@ def html_page() -> str:
   <script>
     let images = [];
     let index = 0;
+    const baleIds = [1, 2, 3, 4];
+    const baleFieldSuffixes = [
+      'remaining_percent', 'location', 'condition', 'color_quality',
+      'scatter_level', 'scatter_bale_equivalent', 'visibility'
+    ];
+    const baleCheckSuffixes = ['present', 'hay_ring_visible', 'scatter_present'];
     const fields = [
       'round_bales_visible', 'bale_equivalents_remaining', 'hay_days_remaining', 'cattle_count',
-      'bale_1_remaining_percent', 'bale_2_remaining_percent', 'bale_3_remaining_percent', 'bale_4_remaining_percent',
+      'cow_count', 'calf_count', 'bull_count',
+      ...baleIds.flatMap(slot => baleFieldSuffixes.map(suffix => `bale_${slot}_${suffix}`)),
+      'bale_4_position_note',
+      'hay_scatter_level', 'hay_scatter_bale_equivalent', 'hay_color_quality',
       'visibility', 'label_confidence', 'notes'
     ];
-    const checks = ['cattle_present', 'new_bales_put_out', 'poor_visibility'];
+    const checks = [
+      'no_bales_confirmed', 'cattle_present', 'new_bales_put_out', 'poor_visibility',
+      ...baleIds.flatMap(slot => baleCheckSuffixes.map(suffix => `bale_${slot}_${suffix}`)),
+      'hay_scatter_present'
+    ];
 
     function $(id) { return document.getElementById(id); }
     function current() { return images[index]; }
@@ -397,8 +735,19 @@ def html_page() -> str:
       fields.forEach(id => { $(id).value = ''; });
       $('visibility').value = 'clear';
       $('label_confidence').value = 'high';
+      $('hay_scatter_level').value = 'none';
+      $('hay_color_quality').value = 'normal';
+      baleIds.forEach(slot => {
+        $(`bale_${slot}_location`).value = slot === 1 ? 'left' : slot === 2 ? 'middle' : slot === 3 ? 'right' : 'unknown';
+        $(`bale_${slot}_condition`).value = 'unknown';
+        $(`bale_${slot}_color_quality`).value = 'normal';
+        $(`bale_${slot}_scatter_level`).value = 'none';
+        $(`bale_${slot}_visibility`).value = 'clear';
+      });
       checks.forEach(id => { $(id).checked = false; });
       document.querySelectorAll('#odd_sightings input').forEach(node => { node.checked = false; });
+      updateDerivedFields();
+      updateNoBalesState();
     }
 
     function loadLabel(label) {
@@ -408,8 +757,34 @@ def html_page() -> str:
         if (label[id] !== undefined && label[id] !== null) $(id).value = label[id];
       });
       checks.forEach(id => { $(id).checked = Boolean(label[id]); });
+      (label.bale_slots || []).forEach(slotLabel => {
+        const slot = Number(slotLabel.slot);
+        if (!baleIds.includes(slot)) return;
+        const mappings = {
+          present: 'present',
+          location: 'location',
+          remaining_percent: 'remaining_percent',
+          condition: 'condition',
+          color_quality: 'color_quality',
+          hay_ring_visible: 'hay_ring_visible',
+          scatter_present: 'scatter_present',
+          scatter_level: 'scatter_level',
+          scatter_bale_equivalent: 'scatter_bale_equivalent',
+          visibility: 'visibility'
+        };
+        Object.entries(mappings).forEach(([source, suffix]) => {
+          const id = `bale_${slot}_${suffix}`;
+          if ($(id) && slotLabel[source] !== undefined && slotLabel[source] !== null) {
+            if ($(id).type === 'checkbox') $(id).checked = Boolean(slotLabel[source]);
+            else $(id).value = slotLabel[source];
+          }
+        });
+        if (slot === 4 && slotLabel.position_note) $('bale_4_position_note').value = slotLabel.position_note;
+      });
       const odd = new Set(label.odd_sightings || []);
       document.querySelectorAll('#odd_sightings input').forEach(node => { node.checked = odd.has(node.value); });
+      updateDerivedFields();
+      updateNoBalesState();
     }
 
     function renderImage() {
@@ -431,25 +806,134 @@ def html_page() -> str:
       return value === '' ? null : Number(value);
     }
 
+    function textValue(id) {
+      const value = $(id).value.trim();
+      return value === '' ? null : value;
+    }
+
+    function animalTotal() {
+      return ['cow_count', 'calf_count', 'bull_count'].reduce((total, id) => total + (numberValue(id) || 0), 0);
+    }
+
+    function updateDerivedFields() {
+      const total = animalTotal();
+      $('cattle_count').value = total || '';
+      if (total > 0) $('cattle_present').checked = true;
+    }
+
+    function updateNoBalesState() {
+      const noBales = $('no_bales_confirmed').checked;
+      const baleFields = [
+        'round_bales_visible', 'bale_equivalents_remaining',
+        ...baleIds.flatMap(slot => [
+          `bale_${slot}_present`,
+          `bale_${slot}_remaining_percent`,
+          `bale_${slot}_location`,
+          `bale_${slot}_condition`,
+          `bale_${slot}_color_quality`,
+          `bale_${slot}_hay_ring_visible`,
+          `bale_${slot}_scatter_present`,
+          `bale_${slot}_scatter_level`,
+          `bale_${slot}_scatter_bale_equivalent`,
+          `bale_${slot}_visibility`
+        ]),
+        'bale_4_position_note'
+      ];
+      if (noBales) {
+        $('round_bales_visible').value = 0;
+        $('bale_equivalents_remaining').value = 0;
+        baleIds.forEach(slot => { $(`bale_${slot}_remaining_percent`).value = 0; });
+        baleIds.forEach(slot => {
+          $(`bale_${slot}_present`).checked = false;
+          $(`bale_${slot}_hay_ring_visible`).checked = false;
+          $(`bale_${slot}_scatter_present`).checked = false;
+          $(`bale_${slot}_scatter_level`).value = 'none';
+          $(`bale_${slot}_scatter_bale_equivalent`).value = '';
+        });
+      }
+      baleFields.forEach(id => {
+        if (id === 'round_bales_visible') return;
+        $(id).disabled = noBales;
+      });
+    }
+
+    function updateBaleSlotState(slot) {
+      if (numberValue(`bale_${slot}_remaining_percent`) !== null) $(`bale_${slot}_present`).checked = true;
+      const scatterLevel = $(`bale_${slot}_scatter_level`).value;
+      if (scatterLevel && scatterLevel !== 'none') $(`bale_${slot}_scatter_present`).checked = true;
+      if ((numberValue(`bale_${slot}_scatter_bale_equivalent`) || 0) > 0) $(`bale_${slot}_scatter_present`).checked = true;
+      if ($(`bale_${slot}_present`).checked) $('no_bales_confirmed').checked = false;
+      updateNoBalesState();
+    }
+
+    function baleSlot(slot) {
+      const present = $('no_bales_confirmed').checked
+        ? false
+        : ($(`bale_${slot}_present`).checked || numberValue(`bale_${slot}_remaining_percent`) !== null);
+      return {
+        slot,
+        present,
+        location: $(`bale_${slot}_location`).value,
+        remaining_percent: numberValue(`bale_${slot}_remaining_percent`),
+        condition: $(`bale_${slot}_condition`).value,
+        color_quality: $(`bale_${slot}_color_quality`).value,
+        hay_ring_visible: $(`bale_${slot}_hay_ring_visible`).checked,
+        scatter_present: $(`bale_${slot}_scatter_present`).checked,
+        scatter_level: $(`bale_${slot}_scatter_level`).value,
+        scatter_bale_equivalent: numberValue(`bale_${slot}_scatter_bale_equivalent`),
+        visibility: $(`bale_${slot}_visibility`).value,
+        position_note: slot === 4 ? textValue('bale_4_position_note') : null
+      };
+    }
+
+    function baleFlatFields(slots) {
+      const flat = {};
+      slots.forEach(slotData => {
+        const prefix = `bale_${slotData.slot}`;
+        flat[`${prefix}_present`] = slotData.present;
+        flat[`${prefix}_location`] = slotData.location;
+        flat[`${prefix}_remaining_percent`] = slotData.remaining_percent;
+        flat[`${prefix}_condition`] = slotData.condition;
+        flat[`${prefix}_color_quality`] = slotData.color_quality;
+        flat[`${prefix}_hay_ring_visible`] = slotData.hay_ring_visible;
+        flat[`${prefix}_scatter_present`] = slotData.scatter_present;
+        flat[`${prefix}_scatter_level`] = slotData.scatter_level;
+        flat[`${prefix}_scatter_bale_equivalent`] = slotData.scatter_bale_equivalent;
+        flat[`${prefix}_visibility`] = slotData.visibility;
+      });
+      flat.bale_4_position_note = textValue('bale_4_position_note');
+      return flat;
+    }
+
     function buildPayload() {
       const image = current();
       const odd = [...document.querySelectorAll('#odd_sightings input:checked')].map(node => node.value);
+      const baleSlots = baleIds.map(slot => baleSlot(slot));
+      updateDerivedFields();
       return {
+        schema_version: 'pastucha_hay_label_v3',
         path: image.path,
         source_path: image.source_path || null,
         device: image.device,
         camera_title: image.camera_title,
         captured_at: image.captured_at,
         temperature_text: image.temperature_text || null,
+        no_bales_confirmed: $('no_bales_confirmed').checked,
         round_bales_visible: numberValue('round_bales_visible'),
-        bale_1_remaining_percent: numberValue('bale_1_remaining_percent'),
-        bale_2_remaining_percent: numberValue('bale_2_remaining_percent'),
-        bale_3_remaining_percent: numberValue('bale_3_remaining_percent'),
-        bale_4_remaining_percent: numberValue('bale_4_remaining_percent'),
+        ...baleFlatFields(baleSlots),
+        bale_slots: baleSlots,
+        bales: baleSlots,
         bale_equivalents_remaining: numberValue('bale_equivalents_remaining'),
         hay_days_remaining: numberValue('hay_days_remaining'),
+        hay_scatter_present: $('hay_scatter_present').checked,
+        hay_scatter_level: $('hay_scatter_level').value,
+        hay_scatter_bale_equivalent: numberValue('hay_scatter_bale_equivalent'),
+        hay_color_quality: $('hay_color_quality').value,
         cattle_present: $('cattle_present').checked,
         cattle_count: numberValue('cattle_count'),
+        cow_count: numberValue('cow_count'),
+        calf_count: numberValue('calf_count'),
+        bull_count: numberValue('bull_count'),
         new_bales_put_out: $('new_bales_put_out').checked,
         poor_visibility: $('poor_visibility').checked,
         odd_sightings: odd,
@@ -479,6 +963,14 @@ def html_page() -> str:
     $('load').addEventListener('click', loadImages);
     $('save').addEventListener('click', saveLabel);
     $('clear').addEventListener('click', clearForm);
+    $('no_bales_confirmed').addEventListener('change', updateNoBalesState);
+    ['cow_count', 'calf_count', 'bull_count'].forEach(id => $(id).addEventListener('input', updateDerivedFields));
+    baleIds.forEach(slot => {
+      $(`bale_${slot}_present`).addEventListener('change', () => updateBaleSlotState(slot));
+      $(`bale_${slot}_remaining_percent`).addEventListener('input', () => updateBaleSlotState(slot));
+      $(`bale_${slot}_scatter_level`).addEventListener('change', () => updateBaleSlotState(slot));
+      $(`bale_${slot}_scatter_bale_equivalent`).addEventListener('input', () => updateBaleSlotState(slot));
+    });
     $('prev').addEventListener('click', () => { if (index > 0) { index -= 1; renderList(); renderImage(); } });
     $('next').addEventListener('click', () => { if (index < images.length - 1) { index += 1; renderList(); renderImage(); } });
     document.addEventListener('keydown', event => {
