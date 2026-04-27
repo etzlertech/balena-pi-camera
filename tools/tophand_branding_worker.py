@@ -676,6 +676,7 @@ def parse_capture_datetime(date_text: str, time_text: str) -> dt.datetime:
     time_clean = time_text.strip().upper().replace(".", "")
     time_clean = re.sub(r"\s+", " ", time_clean)
     time_clean = re.sub(r"([0-9])([AP]M)$", r"\1 \2", time_clean)
+    time_clean = re.sub(r"^00(:\d{2}(?::\d{2})?\s+[AP]M)$", r"12\1", time_clean)
 
     date_formats = ["%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d", "%Y/%d/%m"]
     time_formats = ["%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"]
