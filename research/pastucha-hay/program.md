@@ -42,6 +42,10 @@ Each label should capture:
   - `scatter_level`
   - `scatter_bale_equivalent`
   - `visibility` / occlusion
+  - `level_confidence`
+  - `occlusion_level`
+  - `occluded_by`
+  - `occlusion_note`
 - `bale_equivalents_remaining`
 - `hay_days_remaining`
 - scene-level `hay_scatter_present`, `hay_scatter_level`,
@@ -169,7 +173,11 @@ image sidecar:
           "scatter_present": true,
           "scatter_level": "light",
           "scatter_bale_equivalent": 0.03,
-          "visibility": "clear"
+          "visibility": "clear",
+          "level_confidence": "high",
+          "occlusion_level": "moderate",
+          "occluded_by": "cow",
+          "occlusion_note": "Cow blocks front edge, but bale still reads mostly full"
         }
       ],
       "bale_equivalents_remaining": 1.6,

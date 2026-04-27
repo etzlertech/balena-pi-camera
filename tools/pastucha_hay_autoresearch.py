@@ -52,7 +52,11 @@ Return strict JSON only:
       "scatter_present": boolean,
       "scatter_level": "none|trace|light|moderate|heavy|unknown",
       "scatter_bale_equivalent": number 0-1,
-      "visibility": "clear|partly_occluded|mostly_occluded|night_uncertain|unknown"
+      "visibility": "clear|partly_occluded|mostly_occluded|night_uncertain|unknown",
+      "level_confidence": "high|medium|low|unknown",
+      "occlusion_level": "none|light|moderate|heavy|blocked|unknown",
+      "occluded_by": "none|cow|cattle_group|hay_ring|brush|shadow|night|terrain|equipment|other|unknown",
+      "occlusion_note": "short note or null"
     }
   ],
   "bale_equivalents_remaining": number,
@@ -89,7 +93,9 @@ odd_sightings, visibility, confidence_score, notes.
 For bale equivalents, one untouched round bale is 1.0. A half-eaten bale is 0.5.
 Track left/middle/right bale slots separately, including hay ring visibility,
 hay color/quality, edible scatter around each bale, and whether the slot is
-occluded or uncertain.
+occluded or uncertain. If an animal blocks a bale but you can still confidently
+infer the bale level, report the bale level and separately record occlusion
+level, occluded_by, and level_confidence.
 Do not hallucinate bales hidden outside the frame.""",
     "two_step_observe_decide": """Inspect this Pastucha Hay camera image in two steps, but output only final JSON.
 Step 1: observe visible round bales, cattle, people/vehicles/wildlife, visibility.
@@ -111,7 +117,11 @@ Return strict JSON:
     "scatter_present": boolean,
     "scatter_level": string,
     "scatter_bale_equivalent": number,
-    "visibility": string
+    "visibility": string,
+    "level_confidence": string,
+    "occlusion_level": string,
+    "occluded_by": string,
+    "occlusion_note": string|null
   }],
   "bale_equivalents_remaining": number,
   "hay_days_remaining": number|null,

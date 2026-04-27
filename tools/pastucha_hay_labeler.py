@@ -402,6 +402,40 @@ def html_page() -> str:
               <option value="unknown">Unknown</option>
             </select>
           </label>
+          <label>Level confidence
+            <select id="bale_1_level_confidence">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion amount
+            <select id="bale_1_occlusion_level">
+              <option value="none">None</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="blocked">Blocked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occluded by
+            <select id="bale_1_occluded_by">
+              <option value="none">None</option>
+              <option value="cow">Cow</option>
+              <option value="cattle_group">Cattle group</option>
+              <option value="hay_ring">Hay ring</option>
+              <option value="brush">Brush</option>
+              <option value="shadow">Shadow</option>
+              <option value="night">Night</option>
+              <option value="terrain">Terrain / rise</option>
+              <option value="equipment">Equipment</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion note <input id="bale_1_occlusion_note" type="text" maxlength="140"></label>
         </div>
         <div class="bale-slot">
           <div class="slot-title">
@@ -466,6 +500,40 @@ def html_page() -> str:
               <option value="unknown">Unknown</option>
             </select>
           </label>
+          <label>Level confidence
+            <select id="bale_2_level_confidence">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion amount
+            <select id="bale_2_occlusion_level">
+              <option value="none">None</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="blocked">Blocked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occluded by
+            <select id="bale_2_occluded_by">
+              <option value="none">None</option>
+              <option value="cow">Cow</option>
+              <option value="cattle_group">Cattle group</option>
+              <option value="hay_ring">Hay ring</option>
+              <option value="brush">Brush</option>
+              <option value="shadow">Shadow</option>
+              <option value="night">Night</option>
+              <option value="terrain">Terrain / rise</option>
+              <option value="equipment">Equipment</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion note <input id="bale_2_occlusion_note" type="text" maxlength="140"></label>
         </div>
         <div class="bale-slot">
           <div class="slot-title">
@@ -530,6 +598,40 @@ def html_page() -> str:
               <option value="unknown">Unknown</option>
             </select>
           </label>
+          <label>Level confidence
+            <select id="bale_3_level_confidence">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion amount
+            <select id="bale_3_occlusion_level">
+              <option value="none">None</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="blocked">Blocked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occluded by
+            <select id="bale_3_occluded_by">
+              <option value="none">None</option>
+              <option value="cow">Cow</option>
+              <option value="cattle_group">Cattle group</option>
+              <option value="hay_ring">Hay ring</option>
+              <option value="brush">Brush</option>
+              <option value="shadow">Shadow</option>
+              <option value="night">Night</option>
+              <option value="terrain">Terrain / rise</option>
+              <option value="equipment">Equipment</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion note <input id="bale_3_occlusion_note" type="text" maxlength="140"></label>
         </div>
         <div class="bale-slot">
           <div class="slot-title">
@@ -595,6 +697,40 @@ def html_page() -> str:
               <option value="unknown">Unknown</option>
             </select>
           </label>
+          <label>Level confidence
+            <select id="bale_4_level_confidence">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion amount
+            <select id="bale_4_occlusion_level">
+              <option value="none">None</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="blocked">Blocked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occluded by
+            <select id="bale_4_occluded_by">
+              <option value="none">None</option>
+              <option value="cow">Cow</option>
+              <option value="cattle_group">Cattle group</option>
+              <option value="hay_ring">Hay ring</option>
+              <option value="brush">Brush</option>
+              <option value="shadow">Shadow</option>
+              <option value="night">Night</option>
+              <option value="terrain">Terrain / rise</option>
+              <option value="equipment">Equipment</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occlusion note <input id="bale_4_occlusion_note" type="text" maxlength="140"></label>
           <label>Position note <input id="bale_4_position_note" type="text" maxlength="120"></label>
         </div>
       </div>
@@ -674,7 +810,8 @@ def html_page() -> str:
     const baleIds = [1, 2, 3, 4];
     const baleFieldSuffixes = [
       'remaining_percent', 'location', 'condition', 'color_quality',
-      'scatter_level', 'scatter_bale_equivalent', 'visibility'
+      'scatter_level', 'scatter_bale_equivalent', 'visibility',
+      'level_confidence', 'occlusion_level', 'occluded_by', 'occlusion_note'
     ];
     const baleCheckSuffixes = ['present', 'hay_ring_visible', 'scatter_present'];
     const fields = [
@@ -743,6 +880,9 @@ def html_page() -> str:
         $(`bale_${slot}_color_quality`).value = 'normal';
         $(`bale_${slot}_scatter_level`).value = 'none';
         $(`bale_${slot}_visibility`).value = 'clear';
+        $(`bale_${slot}_level_confidence`).value = 'high';
+        $(`bale_${slot}_occlusion_level`).value = 'none';
+        $(`bale_${slot}_occluded_by`).value = 'none';
       });
       checks.forEach(id => { $(id).checked = false; });
       document.querySelectorAll('#odd_sightings input').forEach(node => { node.checked = false; });
@@ -770,7 +910,11 @@ def html_page() -> str:
           scatter_present: 'scatter_present',
           scatter_level: 'scatter_level',
           scatter_bale_equivalent: 'scatter_bale_equivalent',
-          visibility: 'visibility'
+          visibility: 'visibility',
+          level_confidence: 'level_confidence',
+          occlusion_level: 'occlusion_level',
+          occluded_by: 'occluded_by',
+          occlusion_note: 'occlusion_note'
         };
         Object.entries(mappings).forEach(([source, suffix]) => {
           const id = `bale_${slot}_${suffix}`;
@@ -835,7 +979,11 @@ def html_page() -> str:
           `bale_${slot}_scatter_present`,
           `bale_${slot}_scatter_level`,
           `bale_${slot}_scatter_bale_equivalent`,
-          `bale_${slot}_visibility`
+          `bale_${slot}_visibility`,
+          `bale_${slot}_level_confidence`,
+          `bale_${slot}_occlusion_level`,
+          `bale_${slot}_occluded_by`,
+          `bale_${slot}_occlusion_note`
         ]),
         'bale_4_position_note'
       ];
@@ -849,6 +997,9 @@ def html_page() -> str:
           $(`bale_${slot}_scatter_present`).checked = false;
           $(`bale_${slot}_scatter_level`).value = 'none';
           $(`bale_${slot}_scatter_bale_equivalent`).value = '';
+          $(`bale_${slot}_occlusion_level`).value = 'none';
+          $(`bale_${slot}_occluded_by`).value = 'none';
+          $(`bale_${slot}_occlusion_note`).value = '';
         });
       }
       baleFields.forEach(id => {
@@ -882,6 +1033,10 @@ def html_page() -> str:
         scatter_level: $(`bale_${slot}_scatter_level`).value,
         scatter_bale_equivalent: numberValue(`bale_${slot}_scatter_bale_equivalent`),
         visibility: $(`bale_${slot}_visibility`).value,
+        level_confidence: $(`bale_${slot}_level_confidence`).value,
+        occlusion_level: $(`bale_${slot}_occlusion_level`).value,
+        occluded_by: $(`bale_${slot}_occluded_by`).value,
+        occlusion_note: textValue(`bale_${slot}_occlusion_note`),
         position_note: slot === 4 ? textValue('bale_4_position_note') : null
       };
     }
@@ -900,6 +1055,10 @@ def html_page() -> str:
         flat[`${prefix}_scatter_level`] = slotData.scatter_level;
         flat[`${prefix}_scatter_bale_equivalent`] = slotData.scatter_bale_equivalent;
         flat[`${prefix}_visibility`] = slotData.visibility;
+        flat[`${prefix}_level_confidence`] = slotData.level_confidence;
+        flat[`${prefix}_occlusion_level`] = slotData.occlusion_level;
+        flat[`${prefix}_occluded_by`] = slotData.occluded_by;
+        flat[`${prefix}_occlusion_note`] = slotData.occlusion_note;
       });
       flat.bale_4_position_note = textValue('bale_4_position_note');
       return flat;
