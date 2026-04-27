@@ -78,7 +78,24 @@ http://100.66.5.91:8771/
 ```
 
 The UI reads `tophand-branded-images/manifest.json`, filters to
-`FLEX-M-MGE4`, and writes labels locally on 5090.
+`FLEX-M-MGE4`, blends in any raw source queue from
+`source_queue.json`, and writes labels locally on 5090.
+
+To make a range of unbranded source images available quickly, run:
+
+```bash
+cd /home/travis/tophand-instances/sdco
+python3 tools/pastucha_hay_source_queue.py \
+  --env /home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env \
+  --range jan17-22:2026-01-17:2026-01-22 \
+  --range jan23-30:2026-01-23:2026-01-30 \
+  --range feb15-21:2026-02-15:2026-02-21 \
+  --range mar04-12:2026-03-04:2026-03-12
+```
+
+The raw source images keep the original Spypoint overlay visible. Golden labels
+are keyed to `source_path`, so labels made against raw source images still attach
+to later TOPHAND-branded copies.
 
 ## Two Vantage Points
 

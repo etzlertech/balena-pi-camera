@@ -37,6 +37,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8771)
     parser.add_argument("--manifest-path", default="manifest.json")
+    parser.add_argument("--source-bucket", default=branding.SOURCE_BUCKET)
+    parser.add_argument("--source-queue", type=Path)
     return parser.parse_args()
 
 
@@ -80,9 +82,14 @@ class LabelStore:
         self.jsonl_path = data_dir / "golden_labels.jsonl"
         self.latest: dict[str, Any] = read_json(self.latest_path, {})
 
-    def get(self, image_path: str) -> dict[str, Any] | None:
-        value = self.latest.get(image_path)
-        return value if isinstance(value, dict) else None
+    def get(self, *image_paths: str | None) -> dict[str, Any] | None:
+        for image_path in image_paths:
+            if not image_path:
+                continue
+            value = self.latest.get(image_path)
+            if isinstance(value, dict):
+                return value
+        return None
 
     def upsert(self, payload: dict[str, Any]) -> dict[str, Any]:
         image_path = str(payload.get("path") or "")
@@ -98,9 +105,17 @@ class LabelStore:
 
 
 class ImageIndex:
-    def __init__(self, client: branding.SupabaseRest, manifest_path: str) -> None:
+    def __init__(
+        self,
+        client: branding.SupabaseRest,
+        manifest_path: str,
+        source_bucket: str,
+        source_queue_path: Path | None,
+    ) -> None:
         self.client = client
         self.manifest_path = manifest_path
+        self.source_bucket = source_bucket
+        self.source_queue_path = source_queue_path
         self.images: list[dict[str, Any]] = []
         self.reload()
 
@@ -115,7 +130,27 @@ class ImageIndex:
             row = dict(item)
             row["public_url"] = self.client.public_url(DEST_BUCKET, row["path"])
             row["sort_time"] = parse_time(row.get("captured_at")).isoformat()
+            row["image_mode"] = "branded"
             images.append(row)
+
+        seen_sources = {row.get("source_path") or row.get("path") for row in images}
+        if self.source_queue_path and self.source_queue_path.exists():
+            queue = read_json(self.source_queue_path, {})
+            for item in queue.get("images", []):
+                if item.get("device") != CAMERA_ID:
+                    continue
+                source_path = item.get("source_path") or item.get("path")
+                if not source_path or source_path in seen_sources:
+                    continue
+                row = dict(item)
+                row["path"] = source_path
+                row["source_path"] = source_path
+                row["public_url"] = self.client.public_url(self.source_bucket, source_path)
+                row["sort_time"] = parse_time(row.get("captured_at")).isoformat()
+                row["camera_title"] = CAMERA_TITLE
+                row["image_mode"] = "source"
+                images.append(row)
+                seen_sources.add(source_path)
         images.sort(key=lambda row: parse_time(row.get("captured_at")), reverse=True)
         self.images = images
 
@@ -135,7 +170,7 @@ class ImageIndex:
                 continue
             if end_dt and captured > end_dt:
                 continue
-            existing = labels.get(image["path"])
+            existing = labels.get(image.get("source_path"), image.get("path"))
             if unlabeled_only and existing:
                 continue
             row = dict(image)
@@ -303,6 +338,15 @@ def html_page() -> str:
       <label>Start <input id="start" type="date"></label>
       <label>End <input id="end" type="date"></label>
       <label>Limit <input id="limit" type="number" value="100" min="1" max="500"></label>
+      <label>Range
+        <select id="range_preset">
+          <option value="">Custom / recent</option>
+          <option value="2026-01-17:2026-01-22">Jan 17-22</option>
+          <option value="2026-01-23:2026-01-30">Jan 23-30</option>
+          <option value="2026-02-15:2026-02-21">Feb 15-21</option>
+          <option value="2026-03-04:2026-03-12">Mar 4-12</option>
+        </select>
+      </label>
       <label><span>&nbsp;</span><select id="unlabeled"><option value="0">All</option><option value="1">Unlabeled only</option></select></label>
       <button id="load" class="primary">Load</button>
     </div>
@@ -836,7 +880,16 @@ def html_page() -> str:
     }
     function setStatus(text) { $('status').textContent = text || ''; }
 
+    function applyRangePreset() {
+      const value = $('range_preset').value;
+      if (!value) return;
+      const [start, end] = value.split(':');
+      $('start').value = start;
+      $('end').value = end;
+    }
+
     async function loadImages() {
+      applyRangePreset();
       const params = new URLSearchParams({
         start: $('start').value,
         end: $('end').value,
@@ -854,9 +907,10 @@ def html_page() -> str:
     function renderList() {
       $('list').innerHTML = images.map((image, i) => {
         const labeled = image.label ? '<span class="badge">labeled</span>' : '<span>unlabeled</span>';
+        const mode = image.image_mode === 'source' ? '<span>source queue</span>' : '<span>TOPHAND</span>';
         return `<div class="item ${i === index ? 'active' : ''}" data-index="${i}">
           <img src="${image.public_url}" alt="">
-          <div><strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''} ${labeled}</span></div>
+          <div><strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''} ${labeled}</span>${mode}</div>
         </div>`;
       }).join('');
       document.querySelectorAll('.item').forEach(node => {
@@ -941,7 +995,9 @@ def html_page() -> str:
       }
       $('image').src = image.public_url;
       $('image').alt = image.path;
-      $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${image.path}</span>`;
+      const mode = image.image_mode === 'source' ? 'raw source' : 'TOPHAND branded';
+      const range = image.queue_range ? `<span>${image.queue_range}</span>` : '';
+      $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${mode}</span>${range}<span>${image.path}</span>`;
       loadLabel(image.label);
     }
 
@@ -1068,10 +1124,14 @@ def html_page() -> str:
       const image = current();
       const odd = [...document.querySelectorAll('#odd_sightings input:checked')].map(node => node.value);
       const baleSlots = baleIds.map(slot => baleSlot(slot));
+      const labelPath = image.source_path || image.path;
       updateDerivedFields();
       return {
         schema_version: 'pastucha_hay_label_v3',
-        path: image.path,
+        path: labelPath,
+        display_path: image.path,
+        branded_path: image.image_mode === 'branded' ? image.path : null,
+        image_mode: image.image_mode || 'branded',
         source_path: image.source_path || null,
         device: image.device,
         camera_title: image.camera_title,
@@ -1120,6 +1180,7 @@ def html_page() -> str:
     }
 
     $('load').addEventListener('click', loadImages);
+    $('range_preset').addEventListener('change', () => { applyRangePreset(); loadImages(); });
     $('save').addEventListener('click', saveLabel);
     $('clear').addEventListener('click', clearForm);
     $('no_bales_confirmed').addEventListener('change', updateNoBalesState);
@@ -1204,12 +1265,14 @@ def main() -> int:
         branding.require_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"),
     )
     args.data_dir.mkdir(parents=True, exist_ok=True)
-    Handler.index = ImageIndex(client, args.manifest_path)
+    source_queue = args.source_queue or (args.data_dir / "source_queue.json")
+    Handler.index = ImageIndex(client, args.manifest_path, args.source_bucket, source_queue)
     Handler.labels = LabelStore(args.data_dir)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Pastucha Hay labeler: http://{args.host}:{args.port}/")
     print(f"Images indexed: {len(Handler.index.images)}")
     print(f"Data dir: {args.data_dir}")
+    print(f"Source queue: {source_queue}")
     server.serve_forever()
     return 0
 
