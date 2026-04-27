@@ -630,7 +630,21 @@ def html_page() -> str:
     }
     input[readonly] { opacity: .72; }
     input:disabled, select:disabled, textarea:disabled { opacity: .48; }
-    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .top-actions {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      margin: -18px -18px 16px;
+      padding: 12px 18px;
+      background: rgba(29, 29, 29, .96);
+      border-bottom: 1px solid var(--line);
+    }
+    button.warning {
+      background: #7d5d28;
+      border-color: #9a7534;
+      color: white;
+    }
     .status { color: var(--gold); min-height: 20px; margin-top: 10px; }
     @media (max-width: 1100px) {
       main { grid-template-columns: 1fr; }
@@ -674,6 +688,11 @@ def html_page() -> str:
       </div>
     </section>
     <section class="form">
+      <div class="actions top-actions">
+        <button id="save_top" class="primary">Save Label</button>
+        <button id="save_draft_top" class="warning">Save Draft</button>
+        <button id="no_bales_save_top">No Bales + Save</button>
+      </div>
       <h2 style="margin-top:0">Your Interpretation</h2>
       <div class="checks">
         <label><input id="no_bales_confirmed" type="checkbox"> No bales confirmed</label>
@@ -1154,7 +1173,8 @@ def html_page() -> str:
       </div>
       <label style="margin-top:12px">Notes <textarea id="notes" rows="5" placeholder="Example: three fresh bales, cows not in frame, bale 2 mostly consumed"></textarea></label>
       <div class="actions">
-        <button id="save" class="primary">Save Label</button>
+        <button id="save_bottom" class="primary">Save Label</button>
+        <button id="no_bales_save_bottom">No Bales + Save</button>
         <button id="clear">Clear Form</button>
       </div>
       <div class="status" id="status"></div>
@@ -1207,6 +1227,16 @@ def html_page() -> str:
     }
     function setStatus(text) { $('status').textContent = text || ''; }
 
+    function currentDraft() {
+      const image = current();
+      const intel = image?.hay_intelligence;
+      return intel && intel.status === 'draft' && !image.label ? intel : null;
+    }
+
+    function updateActionState() {
+      $('save_draft_top').disabled = !currentDraft();
+    }
+
     function hayListText(intel) {
       if (!intel) return '';
       if (intel.no_bales_confirmed) return intel.status === 'human' ? 'Hay: no bales' : 'Draft: no bales';
@@ -1228,7 +1258,7 @@ def html_page() -> str:
       if (intel.new_bales_put_out) chips.push('New bales');
       if (intel.confidence_score !== null && intel.confidence_score !== undefined) chips.push(`${Math.round(Number(intel.confidence_score) * 100)}% conf`);
       const apply = intel.status === 'draft'
-        ? '<button id="apply_hay_intel" type="button">Use Draft</button>'
+        ? '<button id="apply_hay_intel" type="button">Use Draft + Save</button>'
         : '';
       return `<div class="hay-intel ${escapeHtml(intel.status || '')}">
         <div class="hay-intel-title"><span>Hay Intelligence</span><span>${escapeHtml(statusText)}</span></div>
@@ -1252,7 +1282,7 @@ def html_page() -> str:
       const params = new URLSearchParams({
         start: $('start').value,
         end: $('end').value,
-        limit: $('limit').value || '100',
+        limit: $('limit').value || '300',
         unlabeled: $('unlabeled').value
       });
       const response = await fetch('/api/images?' + params.toString());
@@ -1350,7 +1380,9 @@ def html_page() -> str:
       if (!image) {
         $('image').removeAttribute('src');
         $('meta').textContent = 'No images loaded';
+        $('hay_intel').innerHTML = '';
         clearForm();
+        updateActionState();
         return;
       }
       $('image').src = image.public_url;
@@ -1360,11 +1392,18 @@ def html_page() -> str:
       $('meta').innerHTML = `<strong>${fmtDate(image.captured_at)}</strong><span>${image.temperature_text || ''}</span><span>${mode}</span>${range}<span>${escapeHtml(image.path)}</span>`;
       $('hay_intel').innerHTML = renderHayIntelligence(image.hay_intelligence);
       const apply = $('apply_hay_intel');
-      if (apply) apply.addEventListener('click', () => applyHayIntelligence(image.hay_intelligence));
-      loadLabel(image.label);
+      if (apply) apply.addEventListener('click', () => saveDraft());
+      if (image.label) {
+        loadLabel(image.label);
+      } else if (image.hay_intelligence?.status === 'draft') {
+        applyHayIntelligence(image.hay_intelligence, {silent: true});
+      } else {
+        clearForm();
+      }
+      updateActionState();
     }
 
-    function applyHayIntelligence(intel) {
+    function applyHayIntelligence(intel, options = {}) {
       if (!intel) return;
       clearForm();
       $('no_bales_confirmed').checked = Boolean(intel.no_bales_confirmed);
@@ -1404,7 +1443,7 @@ def html_page() -> str:
       $('notes').value = `Draft hay intelligence applied. ${intel.summary || ''}`.trim();
       updateDerivedFields();
       updateNoBalesState();
-      setStatus('Draft applied. Review the image before saving.');
+      if (!options.silent) setStatus('Draft applied. Review the image before saving.');
     }
 
     function numberValue(id) {
@@ -1415,6 +1454,13 @@ def html_page() -> str:
     function textValue(id) {
       const value = $(id).value.trim();
       return value === '' ? null : value;
+    }
+
+    function formHasHayData() {
+      return $('no_bales_confirmed').checked
+        || numberValue('round_bales_visible') !== null
+        || numberValue('bale_equivalents_remaining') !== null
+        || baleIds.some(slot => numberValue(`bale_${slot}_remaining_percent`) !== null || $(`bale_${slot}_present`).checked);
     }
 
     function animalTotal() {
@@ -1568,7 +1614,34 @@ def html_page() -> str:
       };
     }
 
-    async function saveLabel() {
+    function markSavedIntelligence(saved) {
+      const image = current();
+      if (!image) return;
+      const baleEq = saved.bale_equivalents_remaining;
+      let summary = 'Saved human label';
+      if (saved.no_bales_confirmed) {
+        summary = 'No bales confirmed';
+      } else if (baleEq !== null && baleEq !== undefined) {
+        summary = `${saved.round_bales_visible || 0} bales, about ${baleEq} bale equivalents`;
+      }
+      image.hay_intelligence = {
+        ...(image.hay_intelligence || {}),
+        status: 'human',
+        analysis_source: 'human_label',
+        basis: 'saved in labeler',
+        summary,
+        no_bales_confirmed: Boolean(saved.no_bales_confirmed),
+        round_bales_visible: saved.round_bales_visible,
+        bale_equivalents_remaining: saved.bale_equivalents_remaining,
+        hay_days_remaining: saved.hay_days_remaining,
+        cattle_present: Boolean(saved.cattle_present),
+        cattle_count: saved.cattle_count,
+        new_bales_put_out: Boolean(saved.new_bales_put_out),
+        confidence_score: 1
+      };
+    }
+
+    async function saveLabel(statusText = 'Saved') {
       if (!current()) return;
       const response = await fetch('/api/label', {
         method: 'POST',
@@ -1581,13 +1654,45 @@ def html_page() -> str:
       }
       const saved = await response.json();
       images[index].label = saved;
+      markSavedIntelligence(saved);
       renderList();
-      setStatus('Saved');
+      $('hay_intel').innerHTML = renderHayIntelligence(images[index].hay_intelligence);
+      updateActionState();
+      setStatus(statusText);
+    }
+
+    async function saveDraft() {
+      const draft = currentDraft();
+      if (!draft) {
+        setStatus('No draft available for this image.');
+        return;
+      }
+      if (!formHasHayData()) applyHayIntelligence(draft, {silent: true});
+      await saveLabel('Draft saved as reviewed label');
+    }
+
+    function setNoBalesFields() {
+      clearForm();
+      $('no_bales_confirmed').checked = true;
+      $('round_bales_visible').value = 0;
+      $('bale_equivalents_remaining').value = 0;
+      $('hay_days_remaining').value = 0;
+      updateNoBalesState();
+    }
+
+    async function noBalesAndSave() {
+      if (!current()) return;
+      setNoBalesFields();
+      await saveLabel('No bales saved');
     }
 
     $('load').addEventListener('click', loadImages);
     $('range_preset').addEventListener('change', () => { applyRangePreset(); loadImages(); });
-    $('save').addEventListener('click', saveLabel);
+    $('save_top').addEventListener('click', () => saveLabel());
+    $('save_bottom').addEventListener('click', () => saveLabel());
+    $('save_draft_top').addEventListener('click', saveDraft);
+    $('no_bales_save_top').addEventListener('click', noBalesAndSave);
+    $('no_bales_save_bottom').addEventListener('click', noBalesAndSave);
     $('clear').addEventListener('click', clearForm);
     $('no_bales_confirmed').addEventListener('change', updateNoBalesState);
     ['cow_count', 'calf_count', 'bull_count'].forEach(id => $(id).addEventListener('input', updateDerivedFields));
