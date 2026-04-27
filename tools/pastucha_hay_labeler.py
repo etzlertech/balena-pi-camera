@@ -192,7 +192,7 @@ class ImageIndex:
     def query(self, params: dict[str, list[str]], labels: LabelStore) -> list[dict[str, Any]]:
         start = (params.get("start") or [""])[0]
         end = (params.get("end") or [""])[0]
-        limit = int((params.get("limit") or ["100"])[0] or 100)
+        limit = int((params.get("limit") or ["300"])[0] or 300)
         unlabeled_only = (params.get("unlabeled") or ["0"])[0] in {"1", "true", "yes"}
 
         start_dt = dt.datetime.fromisoformat(start).replace(tzinfo=branding.CAPTURE_TZ) if start else None
@@ -372,10 +372,11 @@ def html_page() -> str:
     <div class="filters">
       <label>Start <input id="start" type="date"></label>
       <label>End <input id="end" type="date"></label>
-      <label>Limit <input id="limit" type="number" value="100" min="1" max="500"></label>
+      <label>Limit <input id="limit" type="number" value="300" min="1" max="1000"></label>
       <label>Range
         <select id="range_preset">
           <option value="">Custom / recent</option>
+          <option value="2026-01-17:2026-04-26">All history</option>
           <option value="2026-01-17:2026-01-22">Jan 17-22</option>
           <option value="2026-01-23:2026-01-30">Jan 23-30</option>
           <option value="2026-02-15:2026-02-21">Feb 15-21</option>
