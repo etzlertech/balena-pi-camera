@@ -493,6 +493,18 @@ def publish_manifest(client: SupabaseRest, bucket: str, limit: int) -> int:
     return len(entries)
 
 
+def manifest_source_paths(client: SupabaseRest, bucket: str) -> set[str]:
+    manifest = client.download_json_optional(bucket, "manifest.json") or {}
+    paths = set()
+    for item in manifest.get("images") or []:
+        if not isinstance(item, dict):
+            continue
+        source_path = clean_text(item.get("source_path"))
+        if source_path:
+            paths.add(source_path)
+    return paths
+
+
 def find_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     candidates = [
         "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -931,6 +943,13 @@ def main() -> int:
         queue = source_paths_to_objects(args.source_path)[: args.limit]
     else:
         queue = list_source_objects(client, args.source_bucket, args.limit, args.min_bytes, camera_filter)
+        if args.write and not args.force:
+            existing_sources = manifest_source_paths(client, args.dest_bucket)
+            before = len(queue)
+            queue = [source for source in queue if source.path not in existing_sources]
+            skipped = before - len(queue)
+            if skipped:
+                print(f"Skipped {skipped} source images already present in manifest")
     print(f"Queued {len(queue)} source images from {args.source_bucket}")
     if not queue:
         return 0
