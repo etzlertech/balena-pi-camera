@@ -90,12 +90,22 @@ python3 tools/pastucha_hay_source_queue.py \
   --range jan17-22:2026-01-17:2026-01-22 \
   --range jan23-30:2026-01-23:2026-01-30 \
   --range feb15-21:2026-02-15:2026-02-21 \
-  --range mar04-12:2026-03-04:2026-03-12
+  --range mar04-12:2026-03-04:2026-03-12 \
+  --sample-minutes 360 \
+  --vlm-fallback
 ```
 
-The raw source images keep the original Spypoint overlay visible. Golden labels
-are keyed to `source_path`, so labels made against raw source images still attach
-to later TOPHAND-branded copies.
+The raw source images keep the original Spypoint overlay visible. The source
+queue extracts capture date/time from the printed bottom overlay before an image
+becomes labelable. The fast path uses Tesseract on the bottom strip, with VLM
+fallback for frames Tesseract cannot parse. The labeler ignores raw source queue
+rows unless `overlay_verified` is true, `captured_at` is present, and
+`capture_time_source` starts with `image_overlay_`. Filename timestamps are only
+candidate hints and cross-checks; training labels use the printed image overlay
+date/time.
+
+Golden labels are keyed to `source_path`, so labels made against raw source
+images still attach to later TOPHAND-branded copies.
 
 ## Two Vantage Points
 

@@ -139,6 +139,12 @@ class ImageIndex:
             for item in queue.get("images", []):
                 if item.get("device") != CAMERA_ID:
                     continue
+                if not item.get("overlay_verified"):
+                    continue
+                if not item.get("captured_at"):
+                    continue
+                if not str(item.get("capture_time_source") or "").startswith("image_overlay_"):
+                    continue
                 source_path = item.get("source_path") or item.get("path")
                 if not source_path or source_path in seen_sources:
                     continue
