@@ -12,6 +12,7 @@ import datetime as dt
 import html
 import json
 import os
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,12 +29,56 @@ CAMERA_ID = "FLEX-M-MGE4"
 CAMERA_TITLE = "Pastucha Hay"
 DEST_BUCKET = branding.DEST_BUCKET
 DEFAULT_DATA_DIR = Path("/home/travis/tophand-instances/sdco/research/pastucha-hay")
+DEFAULT_DATA_ROOT = Path("/home/travis/tophand-instances/sdco/research")
+
+
+@dataclass(frozen=True)
+class CameraConfig:
+    slug: str
+    route_path: str
+    camera_id: str
+    camera_title: str
+    page_title: str
+    subtitle: str
+    schema_version: str
+    data_dir: Path
+    source_queue_path: Path
+
+
+def camera_configs(data_root: Path, pastucha_data_dir: Path, pastucha_source_queue: Path | None) -> dict[str, CameraConfig]:
+    pastucha_source = pastucha_source_queue or (pastucha_data_dir / "source_queue.json")
+    donna_dir = data_root / "donna-trough-2"
+    return {
+        "pastucha-hay": CameraConfig(
+            slug="pastucha-hay",
+            route_path="",
+            camera_id="FLEX-M-MGE4",
+            camera_title="Pastucha Hay",
+            page_title="Pastucha Hay Golden Labels",
+            subtitle="FLEX-M-MGE4 ROUND BALE RESEARCH",
+            schema_version="pastucha_hay_label_v3",
+            data_dir=pastucha_data_dir,
+            source_queue_path=pastucha_source,
+        ),
+        "donna-trough-2": CameraConfig(
+            slug="donna-trough-2",
+            route_path="/donna-trough-2",
+            camera_id="YV",
+            camera_title="Donna Trough 2",
+            page_title="Donna Trough 2 Golden Labels",
+            subtitle="YV WATER TROUGH + SINGLE BALE RESEARCH",
+            schema_version="donna_trough_2_label_v1",
+            data_dir=donna_dir,
+            source_queue_path=donna_dir / "source_queue.json",
+        ),
+    }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pastucha Hay golden-label UI")
     parser.add_argument("--env", type=Path, default=Path("/home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env"))
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8771)
     parser.add_argument("--manifest-path", default="manifest.json")
@@ -170,8 +215,9 @@ def label_bale_slots(row: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 class LabelStore:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, schema_version: str = "pastucha_hay_label_v3") -> None:
         self.data_dir = data_dir
+        self.schema_version = schema_version
         self.latest_path = data_dir / "golden_labels.latest.json"
         self.jsonl_path = data_dir / "golden_labels.jsonl"
         self.latest: dict[str, Any] = self.canonicalize(read_json(self.latest_path, {}))
@@ -220,7 +266,7 @@ class LabelStore:
             raise ValueError("Missing image path")
         now = dt.datetime.now(dt.UTC).isoformat()
         payload["updated_at"] = now
-        payload.setdefault("schema_version", "pastucha_hay_label_v3")
+        payload.setdefault("schema_version", self.schema_version)
         self.latest[image_path] = payload
         write_json(self.latest_path, self.latest)
         append_jsonl(self.jsonl_path, payload)
@@ -371,14 +417,14 @@ class ImageIndex:
     def __init__(
         self,
         client: branding.SupabaseRest,
+        config: CameraConfig,
         manifest_path: str,
         source_bucket: str,
-        source_queue_path: Path | None,
     ) -> None:
         self.client = client
+        self.config = config
         self.manifest_path = manifest_path
         self.source_bucket = source_bucket
-        self.source_queue_path = source_queue_path
         self.images: list[dict[str, Any]] = []
         self.reload()
 
@@ -388,7 +434,7 @@ class ImageIndex:
             raise RuntimeError(f"Could not load {DEST_BUCKET}/{self.manifest_path}")
         images = []
         for item in manifest.get("images", []):
-            if item.get("device") != CAMERA_ID:
+            if item.get("device") != self.config.camera_id:
                 continue
             row = dict(item)
             row["public_url"] = self.client.public_url(DEST_BUCKET, row["path"])
@@ -397,10 +443,10 @@ class ImageIndex:
             images.append(row)
 
         seen_sources = {row.get("source_path") or row.get("path") for row in images}
-        if self.source_queue_path and self.source_queue_path.exists():
-            queue = read_json(self.source_queue_path, {})
+        if self.config.source_queue_path and self.config.source_queue_path.exists():
+            queue = read_json(self.config.source_queue_path, {})
             for item in queue.get("images", []):
-                if item.get("device") != CAMERA_ID:
+                if item.get("device") != self.config.camera_id:
                     continue
                 if not item.get("overlay_verified"):
                     continue
@@ -416,7 +462,7 @@ class ImageIndex:
                 row["source_path"] = source_path
                 row["public_url"] = self.client.public_url(self.source_bucket, source_path)
                 row["sort_time"] = parse_time(row.get("captured_at")).isoformat()
-                row["camera_title"] = CAMERA_TITLE
+                row["camera_title"] = self.config.camera_title
                 row["image_mode"] = "source"
                 images.append(row)
                 seen_sources.add(source_path)
@@ -451,13 +497,44 @@ class ImageIndex:
         return rows
 
 
-def html_page() -> str:
-    return """<!doctype html>
+def nav_html(active_slug: str, configs: dict[str, CameraConfig]) -> str:
+    links = []
+    for slug in ("pastucha-hay", "donna-trough-2"):
+        config = configs[slug]
+        href = config.route_path or "/"
+        active = " active" if slug == active_slug else ""
+        links.append(f'<a class="camera-link{active}" href="{html.escape(href)}">{html.escape(config.camera_title)}</a>')
+    return '<nav class="camera-nav">' + "".join(links) + "</nav>"
+
+
+def range_options(config: CameraConfig) -> str:
+    if config.slug == "donna-trough-2":
+        options = [
+            ("", "Custom / recent"),
+            ("2026-01-19:2026-04-15", "Stable trough era"),
+            ("2026-04-14:2026-04-15", "Apr 14-15 branded"),
+            ("2026-03-01:2026-04-15", "Mar-Apr"),
+            ("2026-01-19:2026-01-31", "Jan 19-31"),
+        ]
+    else:
+        options = [
+            ("", "Custom / recent"),
+            ("2026-01-17:2026-04-26", "All history"),
+            ("2026-01-17:2026-01-22", "Jan 17-22"),
+            ("2026-01-23:2026-01-30", "Jan 23-30"),
+            ("2026-02-15:2026-02-21", "Feb 15-21"),
+            ("2026-03-04:2026-03-12", "Mar 4-12"),
+        ]
+    return "\n".join(f'<option value="{html.escape(value)}">{html.escape(label)}</option>' for value, label in options)
+
+
+def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
+    page = """<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pastucha Hay Golden Labels</title>
+  <title>__PAGE_TITLE__</title>
   <style>
     :root {
       color-scheme: dark;
@@ -491,6 +568,18 @@ def html_page() -> str:
     }
     h1 { font-size: 20px; margin: 0; }
     .sub { color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+    .camera-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .camera-link {
+      color: var(--text);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .camera-link.active { background: #436a45; border-color: #5c9160; }
     .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
     label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
     input, select, textarea, button {
@@ -630,6 +719,9 @@ def html_page() -> str:
     }
     input[readonly] { opacity: .72; }
     input:disabled, select:disabled, textarea:disabled { opacity: .48; }
+    .donna-only { display: none; }
+    .camera-donna-trough-2 .donna-only { display: block; }
+    .camera-donna-trough-2 .bale-grid .bale-slot:nth-child(n+2) { display: none; }
     .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
     .top-actions {
       position: sticky;
@@ -652,11 +744,12 @@ def html_page() -> str:
     }
   </style>
 </head>
-<body>
+<body class="camera-__CAMERA_SLUG__">
   <header>
     <div>
-      <h1>Pastucha Hay Golden Labels</h1>
-      <div class="sub">FLEX-M-MGE4 ROUND BALE RESEARCH</div>
+      <h1>__PAGE_TITLE__</h1>
+      <div class="sub">__PAGE_SUBTITLE__</div>
+      __CAMERA_NAV__
     </div>
     <div class="filters">
       <label>Start <input id="start" type="date"></label>
@@ -664,12 +757,7 @@ def html_page() -> str:
       <label>Limit <input id="limit" type="number" value="300" min="1" max="1000"></label>
       <label>Range
         <select id="range_preset">
-          <option value="">Custom / recent</option>
-          <option value="2026-01-17:2026-04-26">All history</option>
-          <option value="2026-01-17:2026-01-22">Jan 17-22</option>
-          <option value="2026-01-23:2026-01-30">Jan 23-30</option>
-          <option value="2026-02-15:2026-02-21">Feb 15-21</option>
-          <option value="2026-03-04:2026-03-12">Mar 4-12</option>
+          __RANGE_OPTIONS__
         </select>
       </label>
       <label><span>&nbsp;</span><select id="unlabeled"><option value="0">All</option><option value="1">Unlabeled only</option></select></label>
@@ -711,6 +799,70 @@ def html_page() -> str:
       </div>
       <div class="checks">
         <label><input id="cattle_present" type="checkbox"> Cattle present</label>
+      </div>
+      <div class="donna-only">
+        <h3>Donna Trough 2</h3>
+        <div class="grid2">
+          <label>Horses <input id="horse_count" type="number" min="0" max="20"></label>
+          <label>Water level % <input id="water_level_percent" type="number" min="0" max="100"></label>
+        </div>
+        <div class="checks">
+          <label><input id="horse_present" type="checkbox"> Horse present</label>
+          <label><input id="longhorn_cow_present" type="checkbox"> Longhorn cow present</label>
+          <label><input id="water_trough_visible" type="checkbox"> Trough visible</label>
+          <label><input id="water_visible" type="checkbox"> Water visible</label>
+          <label><input id="float_pipe_visible" type="checkbox"> Float / pipe visible</label>
+          <label><input id="feed_tub_visible" type="checkbox"> Feed tub visible</label>
+        </div>
+        <div class="grid2" style="margin-top:10px">
+          <label>Water level
+            <select id="water_level_category">
+              <option value="unknown">Unknown</option>
+              <option value="full">Full</option>
+              <option value="high">High</option>
+              <option value="mid">Mid</option>
+              <option value="low">Low</option>
+              <option value="empty">Empty</option>
+            </select>
+          </label>
+          <label>Water quality
+            <select id="water_quality">
+              <option value="unknown">Unknown</option>
+              <option value="clear">Clear</option>
+              <option value="normal">Normal</option>
+              <option value="muddy">Muddy</option>
+              <option value="algae">Algae</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+          <label>Water confidence
+            <select id="water_confidence">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Float / pipe condition
+            <select id="float_pipe_condition">
+              <option value="unknown">Unknown</option>
+              <option value="normal">Normal</option>
+              <option value="possibly_damaged">Possibly damaged</option>
+              <option value="not_visible">Not visible</option>
+            </select>
+          </label>
+          <label>Trough occlusion
+            <select id="trough_occlusion_level">
+              <option value="none">None</option>
+              <option value="light">Light</option>
+              <option value="moderate">Moderate</option>
+              <option value="heavy">Heavy</option>
+              <option value="blocked">Blocked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>Occluded by <input id="trough_occluded_by" type="text" maxlength="120"></label>
+        </div>
       </div>
       <h3>Bale Slots</h3>
       <div class="bale-grid">
@@ -1181,9 +1333,12 @@ def html_page() -> str:
     </section>
   </main>
   <script>
+    const CAMERA_SLUG = __CAMERA_SLUG_JSON__;
+    const API_BASE = __API_BASE_JSON__;
+    const LABEL_SCHEMA_VERSION = __SCHEMA_VERSION_JSON__;
     let images = [];
     let index = 0;
-    const baleIds = [1, 2, 3, 4];
+    const baleIds = CAMERA_SLUG === 'donna-trough-2' ? [1] : [1, 2, 3, 4];
     const baleFieldSuffixes = [
       'remaining_percent', 'location', 'condition', 'color_quality',
       'scatter_level', 'scatter_bale_equivalent', 'visibility',
@@ -1193,6 +1348,8 @@ def html_page() -> str:
     const fields = [
       'round_bales_visible', 'bale_equivalents_remaining', 'hay_days_remaining', 'cattle_count',
       'cow_count', 'calf_count', 'bull_count',
+      'horse_count', 'water_level_percent', 'water_level_category', 'water_quality',
+      'water_confidence', 'float_pipe_condition', 'trough_occlusion_level', 'trough_occluded_by',
       ...baleIds.flatMap(slot => baleFieldSuffixes.map(suffix => `bale_${slot}_${suffix}`)),
       'bale_4_position_note',
       'hay_scatter_level', 'hay_scatter_bale_equivalent', 'hay_color_quality',
@@ -1200,11 +1357,14 @@ def html_page() -> str:
     ];
     const checks = [
       'no_bales_confirmed', 'cattle_present', 'new_bales_put_out', 'poor_visibility',
+      'horse_present', 'longhorn_cow_present', 'water_trough_visible', 'water_visible',
+      'float_pipe_visible', 'feed_tub_visible',
       ...baleIds.flatMap(slot => baleCheckSuffixes.map(suffix => `bale_${slot}_${suffix}`)),
       'hay_scatter_present'
     ];
 
     function $(id) { return document.getElementById(id); }
+    function apiPath(path) { return `${API_BASE}${path}`; }
     function current() { return images[index]; }
     function fmtDate(value) {
       const date = new Date(value);
@@ -1285,7 +1445,7 @@ def html_page() -> str:
         limit: $('limit').value || '300',
         unlabeled: $('unlabeled').value
       });
-      const response = await fetch('/api/images?' + params.toString());
+      const response = await fetch(apiPath('/api/images') + '?' + params.toString());
       images = await response.json();
       index = 0;
       renderList();
@@ -1318,6 +1478,11 @@ def html_page() -> str:
       $('label_confidence').value = 'high';
       $('hay_scatter_level').value = 'none';
       $('hay_color_quality').value = 'normal';
+      $('water_level_category').value = 'unknown';
+      $('water_quality').value = 'unknown';
+      $('water_confidence').value = 'high';
+      $('float_pipe_condition').value = 'unknown';
+      $('trough_occlusion_level').value = 'none';
       baleIds.forEach(slot => {
         $(`bale_${slot}_location`).value = slot === 1 ? 'left' : slot === 2 ? 'middle' : slot === 3 ? 'right' : 'unknown';
         $(`bale_${slot}_condition`).value = 'unknown';
@@ -1471,6 +1636,7 @@ def html_page() -> str:
       const total = animalTotal();
       $('cattle_count').value = total || '';
       if (total > 0) $('cattle_present').checked = true;
+      if ((numberValue('horse_count') || 0) > 0) $('horse_present').checked = true;
     }
 
     function updateNoBalesState() {
@@ -1579,7 +1745,7 @@ def html_page() -> str:
       const labelPath = image.source_path || image.path;
       updateDerivedFields();
       return {
-        schema_version: 'pastucha_hay_label_v3',
+        schema_version: LABEL_SCHEMA_VERSION,
         path: labelPath,
         display_path: image.path,
         branded_path: image.image_mode === 'branded' ? image.path : null,
@@ -1605,6 +1771,20 @@ def html_page() -> str:
         cow_count: numberValue('cow_count'),
         calf_count: numberValue('calf_count'),
         bull_count: numberValue('bull_count'),
+        horse_present: $('horse_present').checked,
+        horse_count: numberValue('horse_count'),
+        longhorn_cow_present: $('longhorn_cow_present').checked,
+        water_trough_visible: $('water_trough_visible').checked,
+        water_visible: $('water_visible').checked,
+        water_level_percent: numberValue('water_level_percent'),
+        water_level_category: $('water_level_category').value,
+        water_quality: $('water_quality').value,
+        water_confidence: $('water_confidence').value,
+        float_pipe_visible: $('float_pipe_visible').checked,
+        float_pipe_condition: $('float_pipe_condition').value,
+        trough_occlusion_level: $('trough_occlusion_level').value,
+        trough_occluded_by: textValue('trough_occluded_by'),
+        feed_tub_visible: $('feed_tub_visible').checked,
         new_bales_put_out: $('new_bales_put_out').checked,
         poor_visibility: $('poor_visibility').checked,
         odd_sightings: odd,
@@ -1643,7 +1823,7 @@ def html_page() -> str:
 
     async function saveLabel(statusText = 'Saved') {
       if (!current()) return;
-      const response = await fetch('/api/label', {
+      const response = await fetch(apiPath('/api/label'), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(buildPayload())
@@ -1695,7 +1875,7 @@ def html_page() -> str:
     $('no_bales_save_bottom').addEventListener('click', noBalesAndSave);
     $('clear').addEventListener('click', clearForm);
     $('no_bales_confirmed').addEventListener('change', updateNoBalesState);
-    ['cow_count', 'calf_count', 'bull_count'].forEach(id => $(id).addEventListener('input', updateDerivedFields));
+    ['cow_count', 'calf_count', 'bull_count', 'horse_count'].forEach(id => $(id).addEventListener('input', updateDerivedFields));
     baleIds.forEach(slot => {
       $(`bale_${slot}_present`).addEventListener('change', () => updateBaleSlotState(slot));
       $(`bale_${slot}_remaining_percent`).addEventListener('input', () => updateBaleSlotState(slot));
@@ -1713,11 +1893,31 @@ def html_page() -> str:
   </script>
 </body>
 </html>"""
+    return (
+        page.replace("__PAGE_TITLE__", html.escape(config.page_title))
+        .replace("__PAGE_SUBTITLE__", html.escape(config.subtitle))
+        .replace("__CAMERA_NAV__", nav_html(config.slug, configs))
+        .replace("__RANGE_OPTIONS__", range_options(config))
+        .replace("__CAMERA_SLUG__", html.escape(config.slug))
+        .replace("__CAMERA_SLUG_JSON__", json.dumps(config.slug))
+        .replace("__API_BASE_JSON__", json.dumps(config.route_path))
+        .replace("__SCHEMA_VERSION_JSON__", json.dumps(config.schema_version))
+    )
 
 
 class Handler(BaseHTTPRequestHandler):
-    index: ImageIndex
-    labels: LabelStore
+    indexes: dict[str, ImageIndex]
+    labels_by_slug: dict[str, LabelStore]
+    configs: dict[str, CameraConfig]
+
+    def resolve_camera(self, path: str) -> tuple[str, str]:
+        for slug, config in self.configs.items():
+            if not config.route_path:
+                continue
+            if path == config.route_path or path.startswith(config.route_path + "/"):
+                route = path[len(config.route_path) :] or "/"
+                return slug, route
+        return "pastucha-hay", path
 
     def send_json(self, payload: Any, status: int = HTTPStatus.OK) -> None:
         data = json.dumps(payload, sort_keys=True).encode("utf-8")
@@ -1737,28 +1937,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            self.send_text(html_page(), content_type="text/html")
+        slug, route = self.resolve_camera(parsed.path)
+        if route == "/":
+            self.send_text(html_page(self.configs[slug], self.configs), content_type="text/html")
             return
-        if parsed.path == "/api/images":
+        if route == "/api/images":
             params = parse_qs(parsed.query)
-            self.send_json(self.index.query(params, self.labels))
+            self.send_json(self.indexes[slug].query(params, self.labels_by_slug[slug]))
             return
-        if parsed.path == "/api/reload":
-            self.index.reload()
-            self.send_json({"ok": True, "count": len(self.index.images)})
+        if route == "/api/reload":
+            self.indexes[slug].reload()
+            self.send_json({"ok": True, "count": len(self.indexes[slug].images)})
             return
         self.send_text(f"Not found: {html.escape(parsed.path)}", status=HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path != "/api/label":
+        slug, route = self.resolve_camera(parsed.path)
+        if route != "/api/label":
             self.send_text("Not found", status=HTTPStatus.NOT_FOUND)
             return
         length = int(self.headers.get("Content-Length", "0"))
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            saved = self.labels.upsert(payload)
+            saved = self.labels_by_slug[slug].upsert(payload)
         except Exception as exc:  # noqa: BLE001
             self.send_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
@@ -1775,15 +1977,26 @@ def main() -> int:
         branding.require_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
         branding.require_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"),
     )
-    args.data_dir.mkdir(parents=True, exist_ok=True)
-    source_queue = args.source_queue or (args.data_dir / "source_queue.json")
-    Handler.index = ImageIndex(client, args.manifest_path, args.source_bucket, source_queue)
-    Handler.labels = LabelStore(args.data_dir)
+    configs = camera_configs(args.data_root, args.data_dir, args.source_queue)
+    for config in configs.values():
+        config.data_dir.mkdir(parents=True, exist_ok=True)
+    Handler.configs = configs
+    Handler.indexes = {
+        slug: ImageIndex(client, config, args.manifest_path, args.source_bucket)
+        for slug, config in configs.items()
+    }
+    Handler.labels_by_slug = {
+        slug: LabelStore(config.data_dir, config.schema_version)
+        for slug, config in configs.items()
+    }
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Pastucha Hay labeler: http://{args.host}:{args.port}/")
-    print(f"Images indexed: {len(Handler.index.images)}")
-    print(f"Data dir: {args.data_dir}")
-    print(f"Source queue: {source_queue}")
+    for slug, config in configs.items():
+        url_path = config.route_path or "/"
+        print(f"{config.camera_title}: http://{args.host}:{args.port}{url_path}")
+        print(f"  Images indexed: {len(Handler.indexes[slug].images)}")
+        print(f"  Data dir: {config.data_dir}")
+        print(f"  Source queue: {config.source_queue_path}")
     server.serve_forever()
     return 0
 
