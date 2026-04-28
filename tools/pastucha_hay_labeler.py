@@ -43,11 +43,18 @@ class CameraConfig:
     schema_version: str
     data_dir: Path
     source_queue_path: Path
+    bale_slot_count: int
+    water_section_title: str | None = None
+
+
+NAV_ORDER = ("pastucha-hay", "donna-trough-2", "donna-trough-1", "pastucha-pond")
 
 
 def camera_configs(data_root: Path, pastucha_data_dir: Path, pastucha_source_queue: Path | None) -> dict[str, CameraConfig]:
     pastucha_source = pastucha_source_queue or (pastucha_data_dir / "source_queue.json")
+    donna1_dir = data_root / "donna-trough-1"
     donna_dir = data_root / "donna-trough-2"
+    pond_dir = data_root / "pastucha-pond"
     return {
         "pastucha-hay": CameraConfig(
             slug="pastucha-hay",
@@ -59,6 +66,7 @@ def camera_configs(data_root: Path, pastucha_data_dir: Path, pastucha_source_que
             schema_version="pastucha_hay_label_v3",
             data_dir=pastucha_data_dir,
             source_queue_path=pastucha_source,
+            bale_slot_count=4,
         ),
         "donna-trough-2": CameraConfig(
             slug="donna-trough-2",
@@ -70,6 +78,34 @@ def camera_configs(data_root: Path, pastucha_data_dir: Path, pastucha_source_que
             schema_version="donna_trough_2_label_v1",
             data_dir=donna_dir,
             source_queue_path=donna_dir / "source_queue.json",
+            bale_slot_count=1,
+            water_section_title="Donna Trough 2",
+        ),
+        "donna-trough-1": CameraConfig(
+            slug="donna-trough-1",
+            route_path="/donna-trough-1",
+            camera_id="QN",
+            camera_title="Donna Trough 1",
+            page_title="Donna Trough 1 Golden Labels",
+            subtitle="QN WATER TROUGH + RANCH SCENE RESEARCH",
+            schema_version="donna_trough_1_label_v1",
+            data_dir=donna1_dir,
+            source_queue_path=donna1_dir / "source_queue.json",
+            bale_slot_count=1,
+            water_section_title="Donna Trough 1",
+        ),
+        "pastucha-pond": CameraConfig(
+            slug="pastucha-pond",
+            route_path="/pastucha-pond",
+            camera_id="QC",
+            camera_title="Pastucha Pond",
+            page_title="Pastucha Pond Golden Labels",
+            subtitle="QC POND WATER + RANCH SCENE RESEARCH",
+            schema_version="pastucha_pond_label_v1",
+            data_dir=pond_dir,
+            source_queue_path=pond_dir / "source_queue.json",
+            bale_slot_count=1,
+            water_section_title="Pastucha Pond",
         ),
     }
 
@@ -499,7 +535,9 @@ class ImageIndex:
 
 def nav_html(active_slug: str, configs: dict[str, CameraConfig]) -> str:
     links = []
-    for slug in ("pastucha-hay", "donna-trough-2"):
+    for slug in NAV_ORDER:
+        if slug not in configs:
+            continue
         config = configs[slug]
         href = config.route_path or "/"
         active = " active" if slug == active_slug else ""
@@ -516,6 +554,20 @@ def range_options(config: CameraConfig) -> str:
             ("2026-03-01:2026-04-15", "Mar-Apr"),
             ("2026-01-19:2026-01-31", "Jan 19-31"),
         ]
+    elif config.slug == "donna-trough-1":
+        options = [
+            ("", "Custom / recent"),
+            ("2026-04-01:2026-04-28", "April"),
+            ("2026-03-01:2026-04-28", "Mar-Apr"),
+            ("2026-01-01:2026-04-28", "2026 history"),
+        ]
+    elif config.slug == "pastucha-pond":
+        options = [
+            ("", "Custom / recent"),
+            ("2026-04-01:2026-04-28", "April"),
+            ("2026-03-01:2026-04-28", "Mar-Apr"),
+            ("2026-01-01:2026-04-28", "2026 history"),
+        ]
     else:
         options = [
             ("", "Custom / recent"),
@@ -529,6 +581,11 @@ def range_options(config: CameraConfig) -> str:
 
 
 def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
+    body_classes = [f"camera-{config.slug}"]
+    if config.water_section_title:
+        body_classes.append("water-watch")
+    if config.bale_slot_count == 1:
+        body_classes.append("single-bale")
     page = """<!doctype html>
 <html lang="en">
 <head>
@@ -719,9 +776,9 @@ def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
     }
     input[readonly] { opacity: .72; }
     input:disabled, select:disabled, textarea:disabled { opacity: .48; }
-    .donna-only { display: none; }
-    .camera-donna-trough-2 .donna-only { display: block; }
-    .camera-donna-trough-2 .bale-grid .bale-slot:nth-child(n+2) { display: none; }
+    .water-only { display: none; }
+    .water-watch .water-only { display: block; }
+    .single-bale .bale-grid .bale-slot:nth-child(n+2) { display: none; }
     .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
     .top-actions {
       position: sticky;
@@ -744,7 +801,7 @@ def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
     }
   </style>
 </head>
-<body class="camera-__CAMERA_SLUG__">
+<body class="__BODY_CLASSES__">
   <header>
     <div>
       <h1>__PAGE_TITLE__</h1>
@@ -800,8 +857,8 @@ def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
       <div class="checks">
         <label><input id="cattle_present" type="checkbox"> Cattle present</label>
       </div>
-      <div class="donna-only">
-        <h3>Donna Trough 2</h3>
+      <div class="water-only">
+        <h3>__WATER_SECTION_TITLE__</h3>
         <div class="grid2">
           <label>Horses <input id="horse_count" type="number" min="0" max="20"></label>
           <label>Water level % <input id="water_level_percent" type="number" min="0" max="100"></label>
@@ -1336,9 +1393,10 @@ def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
     const CAMERA_SLUG = __CAMERA_SLUG_JSON__;
     const API_BASE = __API_BASE_JSON__;
     const LABEL_SCHEMA_VERSION = __SCHEMA_VERSION_JSON__;
+    const BALE_SLOT_COUNT = __BALE_SLOT_COUNT_JSON__;
     let images = [];
     let index = 0;
-    const baleIds = CAMERA_SLUG === 'donna-trough-2' ? [1] : [1, 2, 3, 4];
+    const baleIds = Array.from({length: BALE_SLOT_COUNT}, (_, i) => i + 1);
     const baleFieldSuffixes = [
       'remaining_percent', 'location', 'condition', 'color_quality',
       'scatter_level', 'scatter_bale_equivalent', 'visibility',
@@ -1898,10 +1956,13 @@ def html_page(config: CameraConfig, configs: dict[str, CameraConfig]) -> str:
         .replace("__PAGE_SUBTITLE__", html.escape(config.subtitle))
         .replace("__CAMERA_NAV__", nav_html(config.slug, configs))
         .replace("__RANGE_OPTIONS__", range_options(config))
+        .replace("__BODY_CLASSES__", html.escape(" ".join(body_classes)))
+        .replace("__WATER_SECTION_TITLE__", html.escape(config.water_section_title or "Water Source"))
         .replace("__CAMERA_SLUG__", html.escape(config.slug))
         .replace("__CAMERA_SLUG_JSON__", json.dumps(config.slug))
         .replace("__API_BASE_JSON__", json.dumps(config.route_path))
         .replace("__SCHEMA_VERSION_JSON__", json.dumps(config.schema_version))
+        .replace("__BALE_SLOT_COUNT_JSON__", json.dumps(config.bale_slot_count))
     )
 
 
