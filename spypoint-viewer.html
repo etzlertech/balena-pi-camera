@@ -735,6 +735,8 @@
                 if (id && intelFilterById[id] && !ids.includes(id)) ids.push(id);
             };
 
+            (analysis.filter_tags || []).forEach(add);
+
             if (sceneProfile?.filterId) {
                 add(sceneProfile.filterId);
             }

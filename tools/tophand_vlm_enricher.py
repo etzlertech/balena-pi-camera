@@ -37,10 +37,13 @@ overlay text. Return strict JSON only with these keys:
 animals_detected: boolean
 animal_count: integer
 animal_species: array of short lowercase strings
+species_counts: object with any visible counts for cattle, cow, calf, bull, longhorn, horse, deer, hog, bird, dog, other
 humans_detected: boolean
 human_count: integer
 vehicles_detected: boolean
 vehicle_types: array of short lowercase strings
+filter_tags: array using only these exact values when visible or scene-stable:
+  water_trough, water_pond, cattle, horse, person, vehicle, deer, hog
 water_present: boolean
 water_source_type: "pond" | "trough" | "tank" | "creek" | "wetland" | "unknown" | null
 water_level: "high" | "normal" | "low" | "empty" | "unknown" | null
@@ -57,6 +60,11 @@ alert_priority: "none" | "low" | "medium" | "high"
 alert_concerns: array of short strings
 confidence_score: number from 0 to 1
 
+Be especially careful to distinguish cattle, horses, deer, hogs, people, and vehicles.
+Use deer only for deer/antlerless/buck/fawn. Use hog only for feral hog/pig/boar.
+Use cattle for cows, calves, bulls, steers, or longhorns. Use horse for horses.
+Use person for visible people. Use vehicle for trucks, trailers, tractors, UTVs,
+ATVs, cars, or equipment that is clearly vehicle-like.
 Use false, 0, [], "unknown", or null when unsure. Keep wording factual and short.
 """
 
@@ -154,6 +162,17 @@ def list_value(value: Any) -> list[str]:
     return [str(item).strip().lower() for item in values if str(item).strip()]
 
 
+def count_map(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    output = {}
+    for key, raw_count in value.items():
+        count = int_value(raw_count)
+        if count > 0:
+            output[str(key).strip().lower().replace(" ", "_")] = count
+    return output
+
+
 def enum_value(value: Any, allowed: set[str], fallback: str | None = None) -> str | None:
     if value is None:
         return fallback
@@ -168,6 +187,65 @@ def text_value(value: Any, max_chars: int) -> str | None:
     if not text or text.lower() in {"none", "null", "unknown"}:
         return None
     return text[:max_chars].strip()
+
+
+def text_blob(*values: Any) -> str:
+    parts: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value)
+        elif isinstance(value, dict):
+            parts.extend(str(key) for key, present in value.items() if present)
+        else:
+            parts.append(str(value))
+    return " ".join(parts).lower()
+
+
+def contains_any(text: str, terms: set[str]) -> bool:
+    return any(term in text for term in terms)
+
+
+def normalize_filter_tags(raw: dict[str, Any], analysis: dict[str, Any]) -> list[str]:
+    allowed = {"water_trough", "water_pond", "cattle", "horse", "person", "vehicle", "deer", "hog"}
+    tags = [tag for tag in list_value(raw.get("filter_tags")) if tag in allowed]
+    text = text_blob(
+        raw.get("summary"),
+        raw.get("short_summary"),
+        raw.get("scene"),
+        raw.get("animal_species") or raw.get("species"),
+        raw.get("species_counts"),
+        raw.get("vehicle_types"),
+        raw.get("infrastructure"),
+        raw.get("stable_scene_attributes"),
+        raw.get("alert_concerns"),
+        raw.get("water_source_type"),
+    )
+
+    def add(tag: str) -> None:
+        if tag not in tags:
+            tags.append(tag)
+
+    water_source = str(analysis.get("water_source_type") or "").lower()
+    if water_source in {"trough", "tank"}:
+        add("water_trough")
+    if water_source in {"pond", "creek", "wetland"}:
+        add("water_pond")
+    if analysis.get("humans_detected") or contains_any(text, {"person", "people", "human", "worker"}):
+        add("person")
+    if analysis.get("vehicles_detected") or contains_any(text, {"vehicle", "truck", "tractor", "utv", "atv", "trailer", "car"}):
+        add("vehicle")
+    if contains_any(text, {"cattle", "cow", "cows", "calf", "calves", "bull", "bulls", "steer", "longhorn"}):
+        add("cattle")
+    if contains_any(text, {"horse", "horses", "mare", "foal"}):
+        add("horse")
+    if contains_any(text, {"deer", "doe", "buck", "fawn"}):
+        add("deer")
+    if contains_any(text, {"hog", "hogs", "pig", "pigs", "boar", "swine"}):
+        add("hog")
+
+    return tags
 
 
 def normalize_analysis(raw: dict[str, Any], model: str, seconds: float) -> dict[str, Any]:
@@ -187,10 +265,11 @@ def normalize_analysis(raw: dict[str, Any], model: str, seconds: float) -> dict[
     vehicle_types = list_value(raw.get("vehicle_types"))
     vehicles_detected = bool_value(raw.get("vehicles_detected")) or bool(vehicle_types)
 
-    return {
+    analysis = {
         "animals_detected": animals_detected,
         "animal_count": animal_count,
         "animal_species": animal_species,
+        "species_counts": count_map(raw.get("species_counts")),
         "humans_detected": humans_detected,
         "human_count": human_count,
         "vehicles_detected": vehicles_detected,
@@ -223,6 +302,8 @@ def normalize_analysis(raw: dict[str, Any], model: str, seconds: float) -> dict[
         "analysis_source": "tophand_vlm_enricher",
         "analyzed_at": dt.datetime.now(dt.UTC).isoformat(),
     }
+    analysis["filter_tags"] = normalize_filter_tags(raw, analysis)
+    return analysis
 
 
 def load_manifest(client: branding.SupabaseRest, bucket: str, manifest_path: str) -> dict[str, Any]:
