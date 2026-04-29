@@ -49,7 +49,7 @@
             display: flex;
             gap: 10px;
             justify-content: center;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             flex-wrap: wrap;
         }
 
@@ -79,6 +79,93 @@
             text-align: center;
             margin-bottom: 20px;
             color: #888;
+        }
+
+        .intel-filter-panel {
+            display: none;
+            max-width: 1100px;
+            margin: 0 auto 18px;
+        }
+
+        .tophand-mode .intel-filter-panel {
+            display: block;
+        }
+
+        .intel-filter-heading {
+            text-align: center;
+            color: #a8a8a8;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 9px;
+        }
+
+        .intel-filters {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .intel-filter {
+            width: 82px;
+            min-height: 72px;
+            aspect-ratio: 1 / 0.88;
+            display: grid;
+            place-items: center;
+            align-content: center;
+            gap: 3px;
+            padding: 8px 6px;
+            border: 1px solid #454545;
+            border-radius: 8px;
+            background: #262626;
+            color: #ededed;
+            transition: background 0.15s, border-color 0.15s, transform 0.15s;
+        }
+
+        .intel-filter:hover {
+            background: #303030;
+            border-color: #6b6042;
+            transform: translateY(-1px);
+        }
+
+        .intel-filter.active {
+            background: rgba(214, 181, 109, 0.18);
+            border-color: #d6b56d;
+            color: #fff2cc;
+        }
+
+        .intel-filter:disabled {
+            opacity: 0.38;
+            cursor: default;
+            transform: none;
+        }
+
+        .intel-filter-mark {
+            display: grid;
+            place-items: center;
+            width: 28px;
+            height: 24px;
+            border-radius: 5px;
+            background: rgba(214, 181, 109, 0.12);
+            color: #d6b56d;
+            font-size: 0.72rem;
+            font-weight: 900;
+            letter-spacing: 0.04em;
+        }
+
+        .intel-filter-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            line-height: 1.1;
+            text-align: center;
+        }
+
+        .intel-filter-count {
+            color: #a8a8a8;
+            font-size: 0.68rem;
+            font-weight: 700;
         }
 
         .gallery {
@@ -166,6 +253,23 @@
             line-height: 1.2;
         }
 
+        .vlm-tag.intel-pill {
+            cursor: pointer;
+        }
+
+        .vlm-tag.intel-pill.active {
+            background: rgba(214, 181, 109, 0.2);
+            border-color: #d6b56d;
+            color: #fff2cc;
+        }
+
+        @media (max-width: 640px) {
+            .intel-filter {
+                width: 72px;
+                min-height: 66px;
+            }
+        }
+
         .device-tag {
             display: inline-block;
             padding: 4px 8px;
@@ -238,6 +342,11 @@
         <button onclick="loadImages()">🔄 Refresh</button>
     </div>
 
+    <div class="intel-filter-panel" id="intelFilterPanel">
+        <div class="intel-filter-heading">Intelligence Filters</div>
+        <div class="intel-filters" id="intelFilters" role="group" aria-label="Intelligence filters"></div>
+    </div>
+
     <div class="stats" id="stats">Loading...</div>
 
     <div id="gallery" class="gallery"></div>
@@ -275,6 +384,7 @@
 
         let allImages = [];
         let devices = new Set();
+        let activeIntelFilters = new Set();
 
         // Friendly camera names mapping
         const cameraNames = {
@@ -289,10 +399,23 @@
 
         const sceneProfiles = {
             'FLEX-M-MGE4': { type: 'hay', label: 'Hay feeding area' },
-            'QC': { type: 'water', label: 'Pond watch' },
-            'QN': { type: 'water', label: 'Trough watch' },
-            'YV': { type: 'water', label: 'Trough watch' }
+            'QC': { type: 'water', label: 'Pond watch', filterId: 'water_pond', waterSource: 'pond' },
+            'QN': { type: 'water', label: 'Trough watch', filterId: 'water_trough', waterSource: 'trough' },
+            'YV': { type: 'water', label: 'Trough watch', filterId: 'water_trough', waterSource: 'trough' }
         };
+
+        const intelligenceFilters = [
+            { id: 'water_trough', label: 'Water Trough', mark: 'WT', title: 'Water trough' },
+            { id: 'water_pond', label: 'Water Pond', mark: 'WP', title: 'Water pond' },
+            { id: 'cattle', label: 'Cattle', mark: 'COW', title: 'Cattle' },
+            { id: 'horse', label: 'Horse', mark: 'HOR', title: 'Horse' },
+            { id: 'person', label: 'Person', mark: 'PER', title: 'Person' },
+            { id: 'vehicle', label: 'Vehicle', mark: 'VEH', title: 'Vehicle' },
+            { id: 'deer', label: 'Deer', mark: 'DEE', title: 'Deer' },
+            { id: 'hog', label: 'Hog', mark: 'HOG', title: 'Hog' }
+        ];
+
+        const intelFilterById = Object.fromEntries(intelligenceFilters.map(filter => [filter.id, filter]));
 
         // Devices to exclude from viewer
         const excludedDevices = ['Untitled folder', 'test'];
@@ -319,6 +442,7 @@
 
             if (viewMode === VIEW_MODES.tophand) {
                 document.body.classList.add('tophand-mode');
+                renderIntelFilters();
             }
         }
 
@@ -579,6 +703,143 @@
             return !['unknown', 'none', 'null', 'false'].includes(String(value).toLowerCase());
         }
 
+        function hasPositiveCount(value) {
+            const number = Number(value);
+            return !Number.isNaN(number) && number > 0;
+        }
+
+        function containsAny(text, terms) {
+            return terms.some(term => text.includes(term));
+        }
+
+        function analysisSearchText(analysis) {
+            return [
+                analysis.summary,
+                analysis.short_summary,
+                analysis.scene,
+                normalizeSpecies(analysis.animal_species || analysis.species),
+                normalizeSpecies(analysis.vehicle_types),
+                normalizeSpecies(analysis.alert_concerns),
+                normalizeSpecies(analysis.infrastructure),
+                normalizeSpecies(analysis.stable_scene_attributes),
+                analysis.water_source_type,
+                analysis.water_quality
+            ].filter(Boolean).join(' ').toLowerCase();
+        }
+
+        function deriveImageIntelIds(image) {
+            const analysis = image.analysis || {};
+            const sceneProfile = sceneProfiles[image.device] || null;
+            const ids = [];
+            const add = id => {
+                if (id && intelFilterById[id] && !ids.includes(id)) ids.push(id);
+            };
+
+            if (sceneProfile?.filterId) {
+                add(sceneProfile.filterId);
+            }
+
+            const text = analysisSearchText(analysis);
+            const waterSource = String(analysis.water_source_type || sceneProfile?.waterSource || '').toLowerCase();
+            if (waterSource === 'trough' || waterSource === 'tank') add('water_trough');
+            if (waterSource === 'pond' || waterSource === 'creek' || waterSource === 'wetland') add('water_pond');
+
+            if (
+                analysis.humans_detected ||
+                hasPositiveCount(analysis.human_count) ||
+                containsAny(text, ['person', 'people', 'human', 'worker', 'ranch hand'])
+            ) {
+                add('person');
+            }
+
+            if (
+                analysis.vehicles_detected ||
+                hasPositiveCount(analysis.vehicle_count) ||
+                normalizeSpecies(analysis.vehicle_types) ||
+                containsAny(text, ['vehicle', 'truck', 'tractor', 'utv', 'atv', 'trailer', 'car'])
+            ) {
+                add('vehicle');
+            }
+
+            if (containsAny(text, ['cattle', 'cow', 'cows', 'calf', 'calves', 'bull', 'bulls', 'longhorn', 'steer'])) {
+                add('cattle');
+            }
+
+            if (containsAny(text, ['horse', 'horses', 'mare', 'foal'])) {
+                add('horse');
+            }
+
+            if (containsAny(text, ['deer', 'doe', 'buck', 'fawn'])) {
+                add('deer');
+            }
+
+            if (containsAny(text, ['hog', 'hogs', 'pig', 'pigs', 'boar', 'feral swine'])) {
+                add('hog');
+            }
+
+            return ids;
+        }
+
+        function getImageIntelIds(image) {
+            if (!image._intelIds) {
+                image._intelIds = deriveImageIntelIds(image);
+            }
+            return image._intelIds;
+        }
+
+        function imageMatchesIntelFilter(image, filterId) {
+            return getImageIntelIds(image).includes(filterId);
+        }
+
+        function toggleIntelFilter(filterId) {
+            if (!intelFilterById[filterId]) return;
+            if (activeIntelFilters.has(filterId)) {
+                activeIntelFilters.delete(filterId);
+            } else {
+                activeIntelFilters.add(filterId);
+            }
+            displayImages();
+        }
+
+        function renderIntelFilters() {
+            const container = document.getElementById('intelFilters');
+            if (!container || viewMode !== VIEW_MODES.tophand) return;
+            container.innerHTML = intelligenceFilters.map(filter => `
+                <button
+                    class="intel-filter"
+                    type="button"
+                    data-filter-id="${escapeHtml(filter.id)}"
+                    aria-pressed="false"
+                    title="${escapeHtml(filter.title)}"
+                >
+                    <span class="intel-filter-mark">${escapeHtml(filter.mark)}</span>
+                    <span class="intel-filter-label">${escapeHtml(filter.label)}</span>
+                    <span class="intel-filter-count">0</span>
+                </button>
+            `).join('');
+            container.querySelectorAll('.intel-filter').forEach(button => {
+                button.addEventListener('click', () => toggleIntelFilter(button.dataset.filterId));
+            });
+        }
+
+        function updateIntelFilterState(baseImages) {
+            if (viewMode !== VIEW_MODES.tophand) return;
+            const container = document.getElementById('intelFilters');
+            if (!container || !container.children.length) renderIntelFilters();
+
+            intelligenceFilters.forEach(filter => {
+                const button = document.querySelector(`.intel-filter[data-filter-id="${filter.id}"]`);
+                if (!button) return;
+                const count = baseImages.filter(image => imageMatchesIntelFilter(image, filter.id)).length;
+                const active = activeIntelFilters.has(filter.id);
+                button.classList.toggle('active', active);
+                button.disabled = count === 0 && !active;
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+                const countNode = button.querySelector('.intel-filter-count');
+                if (countNode) countNode.textContent = String(count);
+            });
+        }
+
         function buildVlmTags(image) {
             const analysis = image.analysis || {};
             const tags = [];
@@ -661,11 +922,26 @@
         }
 
         function renderVlmTags(image) {
-            const tags = buildVlmTags(image);
-            if (!tags.length) return '';
+            const intelPills = getImageIntelIds(image)
+                .map(id => intelFilterById[id])
+                .filter(Boolean);
+            const intelLabels = new Set(intelPills.map(filter => filter.label.toLowerCase()));
+            const detailTags = buildVlmTags(image)
+                .filter(tag => !intelLabels.has(String(tag).toLowerCase()))
+                .slice(0, Math.max(0, 5 - intelPills.length));
+            if (!intelPills.length && !detailTags.length) return '';
             return `
                 <div class="vlm-tags">
-                    ${tags.map(tag => `<span class="vlm-tag">${escapeHtml(tag)}</span>`).join('')}
+                    ${intelPills.map(filter => `
+                        <span
+                            class="vlm-tag intel-pill ${activeIntelFilters.has(filter.id) ? 'active' : ''}"
+                            role="button"
+                            tabindex="0"
+                            data-filter-id="${escapeHtml(filter.id)}"
+                            title="Filter ${escapeHtml(filter.title)}"
+                        >${escapeHtml(filter.label)}</span>
+                    `).join('')}
+                    ${detailTags.map(tag => `<span class="vlm-tag">${escapeHtml(tag)}</span>`).join('')}
                 </div>
             `;
         }
@@ -691,10 +967,16 @@
             const stats = document.getElementById('stats');
             const deviceFilter = document.getElementById('deviceFilter').value;
             const sortOrder = document.getElementById('sortOrder').value;
+            const activeFilters = Array.from(activeIntelFilters);
 
             // Filter images
-            let filtered = allImages.filter(img =>
+            const deviceFiltered = allImages.filter(img =>
                 deviceFilter === 'all' || img.device === deviceFilter
+            );
+            updateIntelFilterState(deviceFiltered);
+
+            let filtered = deviceFiltered.filter(img =>
+                !activeFilters.length || activeFilters.some(filterId => imageMatchesIntelFilter(img, filterId))
             );
 
             // Sort images by actual capture time (not upload time)
@@ -705,7 +987,10 @@
             });
 
             // Update stats
-            stats.textContent = `${filtered.length} images from ${devices.size} devices`;
+            const activeLabels = activeFilters.map(filterId => intelFilterById[filterId]?.label).filter(Boolean);
+            stats.textContent = activeLabels.length
+                ? `${filtered.length} of ${deviceFiltered.length} images · ${activeLabels.join(', ')}`
+                : `${filtered.length} images from ${devices.size} devices`;
 
             // Clear gallery
             gallery.innerHTML = '';
@@ -770,6 +1055,19 @@
         // Event listeners
         document.getElementById('deviceFilter').addEventListener('change', displayImages);
         document.getElementById('sortOrder').addEventListener('change', displayImages);
+        document.addEventListener('click', event => {
+            const target = event.target instanceof Element ? event.target : null;
+            const pill = target?.closest('.intel-pill[data-filter-id]');
+            if (!pill) return;
+            toggleIntelFilter(pill.dataset.filterId);
+        });
+        document.addEventListener('keydown', event => {
+            const target = event.target instanceof Element ? event.target : null;
+            const pill = target?.closest('.intel-pill[data-filter-id]');
+            if (!pill || !['Enter', ' '].includes(event.key)) return;
+            event.preventDefault();
+            toggleIntelFilter(pill.dataset.filterId);
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
