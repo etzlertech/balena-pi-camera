@@ -708,8 +708,25 @@
             return !Number.isNaN(number) && number > 0;
         }
 
+        function termIsNegated(text, start, end) {
+            const before = text.slice(Math.max(0, start - 56), start);
+            const after = text.slice(end, end + 32);
+            return /\b(no|not|none|without|absent|missing)\b[\w\s,;/&-]{0,56}$/.test(before) ||
+                /^\s*(?::|=|-)?\s*(no|none|0|absent|missing|not visible|not present)\b/.test(after);
+        }
+
         function containsAny(text, terms) {
-            return terms.some(term => text.includes(term));
+            return terms.some(term => {
+                const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+                const pattern = new RegExp(`(^|[^a-z0-9])(${escaped})(?=$|[^a-z0-9])`, 'gi');
+                let match;
+                while ((match = pattern.exec(text)) !== null) {
+                    const start = match.index + match[1].length;
+                    const end = start + match[2].length;
+                    if (!termIsNegated(text, start, end)) return true;
+                }
+                return false;
+            });
         }
 
         function analysisSearchText(analysis) {

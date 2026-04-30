@@ -203,24 +203,77 @@ def text_blob(*values: Any) -> str:
     return " ".join(parts).lower()
 
 
+def term_matches(text: str, terms: set[str]) -> list[re.Match[str]]:
+    matches: list[re.Match[str]] = []
+    for term in terms:
+        pattern = r"(?<![a-z0-9])" + re.escape(term).replace(r"\ ", r"\s+") + r"(?![a-z0-9])"
+        matches.extend(re.finditer(pattern, text))
+    matches.sort(key=lambda match: match.start())
+    return matches
+
+
+def term_is_negated(text: str, match: re.Match[str]) -> bool:
+    before = text[max(0, match.start() - 56) : match.start()]
+    after = text[match.end() : match.end() + 32]
+    return bool(
+        re.search(r"\b(no|not|none|without|absent|missing)\b[\w\s,;/&-]{0,56}$", before)
+        or re.match(r"\s*(?::|=|-)?\s*(no|none|0|absent|missing|not visible|not present)\b", after)
+    )
+
+
 def contains_any(text: str, terms: set[str]) -> bool:
-    return any(term in text for term in terms)
+    return any(not term_is_negated(text, match) for match in term_matches(text, terms))
 
 
-def normalize_filter_tags(raw: dict[str, Any], analysis: dict[str, Any]) -> list[str]:
-    allowed = {"water_trough", "water_pond", "cattle", "horse", "person", "vehicle", "deer", "hog"}
-    tags = [tag for tag in list_value(raw.get("filter_tags")) if tag in allowed]
-    text = text_blob(
+def count_contains(value: Any, terms: set[str]) -> bool:
+    for key, count in count_map(value).items():
+        if count > 0 and contains_any(key.replace("_", " "), terms):
+            return True
+    return False
+
+
+def normalize_filter_tags(raw: dict[str, Any], analysis: dict[str, Any], *, trust_raw_tags: bool = True) -> list[str]:
+    allowed = ["water_trough", "water_pond", "cattle", "horse", "person", "vehicle", "deer", "hog"]
+    tags = [tag for tag in list_value(raw.get("filter_tags")) if tag in allowed] if trust_raw_tags else []
+    scene_text = text_blob(
         raw.get("summary"),
         raw.get("short_summary"),
         raw.get("scene"),
+        analysis.get("summary"),
+        analysis.get("scene"),
+        raw.get("alert_concerns"),
+        analysis.get("alert_concerns"),
+    )
+    species_text = text_blob(
         raw.get("animal_species") or raw.get("species"),
         raw.get("species_counts"),
+        analysis.get("animal_species") or analysis.get("species"),
+        analysis.get("species_counts"),
+        raw.get("summary"),
+        raw.get("short_summary"),
+        raw.get("scene"),
+        analysis.get("summary"),
+        analysis.get("scene"),
+    )
+    vehicle_text = text_blob(
         raw.get("vehicle_types"),
-        raw.get("infrastructure"),
-        raw.get("stable_scene_attributes"),
+        analysis.get("vehicle_types"),
+        raw.get("summary"),
+        raw.get("short_summary"),
+        raw.get("scene"),
+        analysis.get("summary"),
+        analysis.get("scene"),
         raw.get("alert_concerns"),
+        analysis.get("alert_concerns"),
+    )
+    person_text = scene_text
+    water_text = text_blob(
         raw.get("water_source_type"),
+        analysis.get("water_source_type"),
+        raw.get("infrastructure"),
+        analysis.get("infrastructure"),
+        raw.get("stable_scene_attributes"),
+        analysis.get("stable_scene_attributes"),
     )
 
     def add(tag: str) -> None:
@@ -228,24 +281,32 @@ def normalize_filter_tags(raw: dict[str, Any], analysis: dict[str, Any]) -> list
             tags.append(tag)
 
     water_source = str(analysis.get("water_source_type") or "").lower()
-    if water_source in {"trough", "tank"}:
+    if water_source in {"trough", "tank"} or contains_any(water_text, {"trough", "tank", "water trough"}):
         add("water_trough")
-    if water_source in {"pond", "creek", "wetland"}:
+    if water_source in {"pond", "creek", "wetland"} or contains_any(water_text, {"pond", "creek", "wetland"}):
         add("water_pond")
-    if analysis.get("humans_detected") or contains_any(text, {"person", "people", "human", "worker"}):
+    if analysis.get("humans_detected") or contains_any(person_text, {"person", "people", "human", "worker", "ranch hand"}):
         add("person")
-    if analysis.get("vehicles_detected") or contains_any(text, {"vehicle", "truck", "tractor", "utv", "atv", "trailer", "car"}):
+    if analysis.get("vehicles_detected") or contains_any(vehicle_text, {"vehicle", "truck", "tractor", "utv", "atv", "trailer", "car"}):
         add("vehicle")
-    if contains_any(text, {"cattle", "cow", "cows", "calf", "calves", "bull", "bulls", "steer", "longhorn"}):
+    if count_contains(raw.get("species_counts"), {"cattle", "cow", "calf", "bull", "steer", "longhorn"}) or count_contains(
+        analysis.get("species_counts"), {"cattle", "cow", "calf", "bull", "steer", "longhorn"}
+    ) or contains_any(species_text, {"cattle", "cow", "cows", "calf", "calves", "bull", "bulls", "steer", "longhorn"}):
         add("cattle")
-    if contains_any(text, {"horse", "horses", "mare", "foal"}):
+    if count_contains(raw.get("species_counts"), {"horse", "mare", "foal"}) or count_contains(
+        analysis.get("species_counts"), {"horse", "mare", "foal"}
+    ) or contains_any(species_text, {"horse", "horses", "mare", "foal"}):
         add("horse")
-    if contains_any(text, {"deer", "doe", "buck", "fawn"}):
+    if count_contains(raw.get("species_counts"), {"deer", "doe", "buck", "fawn"}) or count_contains(
+        analysis.get("species_counts"), {"deer", "doe", "buck", "fawn"}
+    ) or contains_any(species_text, {"deer", "doe", "buck", "fawn"}):
         add("deer")
-    if contains_any(text, {"hog", "hogs", "pig", "pigs", "boar", "swine"}):
+    if count_contains(raw.get("species_counts"), {"hog", "pig", "boar", "swine"}) or count_contains(
+        analysis.get("species_counts"), {"hog", "pig", "boar", "swine"}
+    ) or contains_any(species_text, {"hog", "hogs", "pig", "pigs", "boar", "swine", "feral swine"}):
         add("hog")
 
-    return tags
+    return [tag for tag in allowed if tag in tags]
 
 
 def normalize_analysis(raw: dict[str, Any], model: str, seconds: float) -> dict[str, Any]:
@@ -313,6 +374,72 @@ def load_manifest(client: branding.SupabaseRest, bucket: str, manifest_path: str
     return manifest
 
 
+def repair_filter_tags(
+    *,
+    client: branding.SupabaseRest,
+    bucket: str,
+    manifest: dict[str, Any],
+    camera_filter: set[str],
+    limit: int,
+    write: bool,
+    report: Path,
+    no_manifest: bool,
+) -> dict[str, int]:
+    report.parent.mkdir(parents=True, exist_ok=True)
+    summary = {"checked": 0, "changed": 0, "dry_run": 0, "missing_analysis": 0}
+
+    for image in manifest.get("images", []):
+        if camera_filter and image.get("device") not in camera_filter:
+            continue
+        if summary["checked"] >= limit:
+            break
+
+        metadata_path = branding.branded_metadata_path(image["path"])
+        metadata = client.download_json_optional(bucket, metadata_path) or {}
+        analysis_key = "analysis" if isinstance(metadata.get("analysis"), dict) else "ranch_eye_analysis"
+        analysis = metadata.get(analysis_key)
+        if not isinstance(analysis, dict):
+            summary["missing_analysis"] += 1
+            continue
+
+        summary["checked"] += 1
+        old_tags = list_value(analysis.get("filter_tags"))
+        new_tags = normalize_filter_tags({}, analysis, trust_raw_tags=False)
+        result = {
+            "path": image.get("path"),
+            "camera_title": image.get("camera_title"),
+            "captured_at": image.get("captured_at"),
+            "old_filter_tags": old_tags,
+            "new_filter_tags": new_tags,
+            "status": "unchanged",
+        }
+
+        if old_tags != new_tags:
+            analysis["filter_tags"] = new_tags
+            result["status"] = "dry_run"
+            if write:
+                client.upload_bytes(
+                    bucket,
+                    metadata_path,
+                    json.dumps(metadata, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+                    "application/json",
+                )
+                result["status"] = "changed"
+                summary["changed"] += 1
+            else:
+                summary["dry_run"] += 1
+
+        with report.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(result, sort_keys=True) + "\n")
+
+    if write and summary["changed"] and not no_manifest:
+        manifest_count = branding.publish_manifest(client, bucket, 5000)
+        print(f"Manifest updated: {manifest_count} branded images")
+
+    print("Repair summary:", json.dumps(summary, sort_keys=True))
+    return summary
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Enrich TOPHAND branded gallery sidecars with scene VLM data.")
     parser.add_argument("--env", type=Path, default=Path("/home/travis/tophand-instances/sdco/.secrets/dtzay-supabase.env"))
@@ -327,6 +454,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--no-manifest", action="store_true")
+    parser.add_argument("--repair-filter-tags", action="store_true")
     parser.add_argument("--report", type=Path, default=Path("tophand-vlm-enrichment-report.jsonl"))
     return parser.parse_args()
 
@@ -347,6 +475,19 @@ def main() -> int:
     )
     manifest = load_manifest(client, args.bucket, args.manifest_path)
     camera_filter = set(args.camera or [])
+
+    if args.repair_filter_tags:
+        repair_filter_tags(
+            client=client,
+            bucket=args.bucket,
+            manifest=manifest,
+            camera_filter=camera_filter,
+            limit=args.limit,
+            write=args.write,
+            report=args.report,
+            no_manifest=args.no_manifest,
+        )
+        return 0
 
     candidates = []
     for image in manifest.get("images", []):
