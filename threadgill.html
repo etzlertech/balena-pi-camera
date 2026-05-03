@@ -526,7 +526,7 @@
 
     .captureItem {
       display: grid;
-      grid-template-columns: 74px minmax(0, 1fr);
+      grid-template-columns: 74px minmax(0, 1fr) 24px;
       gap: 8px;
       align-items: center;
       min-height: 58px;
@@ -549,6 +549,10 @@
       height: 58px;
       object-fit: cover;
       display: block;
+    }
+
+    .captureItem:not(:has(.playMark)) {
+      grid-template-columns: 74px minmax(0, 1fr);
     }
 
     .captureItem div {
@@ -1184,7 +1188,7 @@
         <section class="captureFeed" aria-label="${camera.name} recent clips">
           ${clips.map((clip, index) => `
             <button class="captureItem" type="button" data-clip-index="${index}">
-              <img src="${clipThumb(clip)}" alt="${clip.title}">
+              <img class="${rotationClass(camera)}" src="${clipThumb(clip)}" alt="${clip.title}">
               <div>
                 <strong>${clip.title}</strong>
                 <span>${clip.meta}</span>
@@ -1203,6 +1207,7 @@
       const url = clipUrl(clip);
       clipVideo.pause();
       clipVideo.removeAttribute("src");
+      clipVideo.className = rotationClass(selected);
       clipVideo.poster = clipThumb(clip);
       clipFallback.hidden = Boolean(url);
       clipVideo.hidden = !url;
@@ -1224,6 +1229,7 @@
     function closeClipPlayer() {
       clipVideo.pause();
       clipVideo.removeAttribute("src");
+      clipVideo.removeAttribute("class");
       clipVideo.load();
       clipPlayerScreen.setAttribute("aria-hidden", "true");
     }
