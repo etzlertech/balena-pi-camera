@@ -755,6 +755,7 @@
     const SUPABASE_BUCKET = "spypoint-images";
     const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const FRIGATE_PROXY = "/api/threadgill/frigate";
+    const CONTROL_PROXY = "/api/threadgill/control";
 
     const cameras = [
       {
@@ -1135,7 +1136,7 @@
       detailScreen.setAttribute("aria-hidden", "false");
 
       window.clearInterval(refreshTimer);
-      if (apiBase && selected.kind === "house") {
+      if (selected.kind === "house") {
         refreshTimer = window.setInterval(() => {
           const img = document.querySelector("#detailImage");
           if (img) img.src = cacheBust(src);
@@ -1265,25 +1266,22 @@
       controlPanel.classList.toggle("ptzOnly", selected.ptz);
       controlTitle.textContent = selected.ptz ? "Aim Cam" : "Zoom Cam";
       controlToggle.textContent = controlOpen ? (selected.ptz ? "Close Aim" : "Close Zoom") : (selected.ptz ? "Aim Cam" : "Zoom Cam");
-      controlStatus.textContent = apiBase ? "Ready" : "Bridge not connected";
+      controlStatus.textContent = "Control bridge ready";
     }
 
     async function sendControl(action) {
       if (!selected) return;
-      if (!apiBase) {
-        controlStatus.textContent = "Bridge not connected";
-        return;
-      }
       controlStatus.textContent = action.replace("_", " ");
       try {
-        await fetch(`${apiBase}/api/control/${encodeURIComponent(selected.id)}`, {
+        const res = await fetch(`${CONTROL_PROXY}?camera=${encodeURIComponent(selected.id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, duration_ms: action === "homebase" ? 2300 : 220 })
         });
-        controlStatus.textContent = "Ready";
+        const data = await res.json().catch(() => ({}));
+        controlStatus.textContent = data.ok ? "Ready" : (data.error || "Control failed");
       } catch {
-        controlStatus.textContent = "Control unavailable";
+        controlStatus.textContent = "Control bridge offline";
       }
     }
 
