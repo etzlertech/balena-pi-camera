@@ -961,6 +961,7 @@
     let filter = "all";
     let selected = null;
     let refreshTimer = null;
+    let detailPreload = null;
     let controlOpen = false;
     const refreshingThumbs = new Map();
     const detailZoom = {
@@ -1022,6 +1023,11 @@
       return `${url}${separator}v=${Date.now()}`;
     }
 
+    function displayImageUrl(url) {
+      if (!url || url.startsWith("blob:") || url.startsWith("data:")) return url;
+      return cacheBust(url);
+    }
+
     function thumbCacheRequest(camera) {
       return new Request(`${window.location.origin}/threadgill-thumb-cache/${encodeURIComponent(camera.id)}`);
     }
@@ -1076,6 +1082,29 @@
       } finally {
         if (refreshingThumbs.get(camera.id) === liveSrc) refreshingThumbs.delete(camera.id);
       }
+    }
+
+    function detailStartImage(camera, liveSrc) {
+      const tileImg = document.querySelector(`img[data-camera-id="${camera.id}"]`);
+      return camera.cachedThumb || tileImg?.currentSrc || tileImg?.src || liveSrc;
+    }
+
+    function refreshDetailImage(camera, liveSrc) {
+      if (!liveSrc || selected?.id !== camera.id || detailPreload?.cameraId === camera.id) return;
+      const nextSrc = cacheBust(liveSrc);
+      detailPreload = { cameraId: camera.id, src: nextSrc };
+      const loader = new Image();
+      loader.onload = () => {
+        if (selected?.id === camera.id && detailPreload?.src === nextSrc) {
+          const img = document.querySelector("#detailImage");
+          if (img) img.src = nextSrc;
+        }
+        if (detailPreload?.src === nextSrc) detailPreload = null;
+      };
+      loader.onerror = () => {
+        if (detailPreload?.src === nextSrc) detailPreload = null;
+      };
+      loader.src = nextSrc;
     }
 
     function rotationClass(camera) {
@@ -1406,8 +1435,9 @@
       closeControl();
       resetDetailZoom();
       const src = imageSrc(selected, true);
-      const media = src
-        ? `<div id="detailZoomSurface" class="detailZoomSurface"><img id="detailImage" class="${rotationClass(selected)}" src="${cacheBust(src)}" alt="${selected.name}"></div>`
+      const initialSrc = detailStartImage(selected, src);
+      const media = initialSrc
+        ? `<div id="detailZoomSurface" class="detailZoomSurface"><img id="detailImage" class="${rotationClass(selected)}" src="${displayImageUrl(initialSrc)}" alt="${selected.name}"></div>`
         : `<div class="placeholder">${selected.zone}</div>`;
       detailFrame.innerHTML = `${media}<span class="brandMark">RanchView</span>`;
       detailInfo.innerHTML = `
@@ -1427,10 +1457,8 @@
 
       window.clearInterval(refreshTimer);
       if (selected.kind === "house") {
-        refreshTimer = window.setInterval(() => {
-          const img = document.querySelector("#detailImage");
-          if (img) img.src = cacheBust(src);
-        }, 1400);
+        refreshDetailImage(selected, src);
+        refreshTimer = window.setInterval(() => refreshDetailImage(selected, src), 3500);
       }
     }
 
@@ -1559,6 +1587,7 @@
     function closeDetail() {
       window.clearInterval(refreshTimer);
       refreshTimer = null;
+      detailPreload = null;
       selected = null;
       closeControl();
       closeClipPlayer();
