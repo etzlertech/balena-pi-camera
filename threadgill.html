@@ -94,16 +94,21 @@
 
     .filters {
       grid-row: 2;
-      height: 104px;
+      --filter-size: clamp(72px, calc((100vw - 38px) / 4), 86px);
+      height: calc(var(--filter-size) + 16px);
       padding: 8px 10px;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(4, var(--filter-size));
       gap: 6px;
+      justify-content: space-between;
     }
 
     .filter {
-      min-width: 0;
-      min-height: 86px;
+      width: var(--filter-size);
+      height: var(--filter-size);
+      min-width: var(--filter-size);
+      min-height: 0;
+      aspect-ratio: 1 / 1;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #202a22;
@@ -530,7 +535,9 @@
       grid-template-columns: 74px minmax(0, 1fr);
       gap: 8px;
       align-items: center;
+      height: 58px;
       min-height: 58px;
+      max-height: 58px;
       border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
@@ -557,6 +564,9 @@
       display: grid;
       gap: 2px;
       padding-right: 8px;
+      align-content: center;
+      height: 100%;
+      overflow: hidden;
     }
 
     .captureItem strong,
@@ -569,12 +579,14 @@
     .captureItem strong {
       font-size: 12px;
       font-weight: 900;
+      line-height: 1.15;
     }
 
     .captureItem span {
       color: var(--muted);
       font-size: 10px;
       font-weight: 800;
+      line-height: 1.15;
     }
 
     .captureItem .playMark {
@@ -651,7 +663,7 @@
     <nav class="filters" aria-label="Camera filters">
       <button class="filter active" type="button" data-filter="all">All</button>
       <button class="filter" type="button" data-filter="house">House</button>
-      <button class="filter" type="button" data-filter="trail">Trail</button>
+      <button class="filter" type="button" data-filter="trail">Ranch</button>
       <button class="filter" type="button" data-filter="alerts">Alerts</button>
     </nav>
 
@@ -847,7 +859,7 @@
       {
         id: "trail-gate",
         name: "Gate",
-        zone: "Trail",
+        zone: "Ranch",
         kind: "trail",
         type: "Latest",
         sourceLabel: "M7 Highway Gate",
@@ -861,7 +873,7 @@
       {
         id: "trail-water",
         name: "Water",
-        zone: "Trail",
+        zone: "Ranch",
         kind: "trail",
         type: "Latest",
         sourceLabel: "Pastucha Pond",
@@ -874,63 +886,7 @@
       }
     ];
 
-    const clipFeeds = {
-      "amcrest-mt2544ew-01": [
-        {
-          title: "Person detection",
-          meta: "Zoom Cam 120 · Frigate event clip",
-          thumb: "/threadgill-assets/clip-120-person.webp",
-          url: "/threadgill-assets/clip-120-person.mp4",
-          eventId: "1777813886.326724-r086v2"
-        },
-        {
-          title: "Long motion event",
-          meta: "Zoom Cam 120 · Retained Frigate clip",
-          thumb: "/threadgill-assets/clip-120-long.webp",
-          url: "/threadgill-assets/clip-120-long.mp4",
-          eventId: "1777813139.418205-qzag59"
-        }
-      ],
-      "amcrest-mt2544ew-02": [
-        {
-          title: "Person detection",
-          meta: "Zoom Cam 121 · Frigate event clip",
-          thumb: "/threadgill-assets/clip-121-person.webp",
-          url: "/threadgill-assets/clip-121-person.mp4",
-          eventId: "1777813933.766264-f6pw0j"
-        },
-        {
-          title: "Motion clip",
-          meta: "Zoom Cam 121 · Retained Frigate clip",
-          thumb: "/threadgill-assets/clip-121-motion.webp",
-          url: "/threadgill-assets/clip-121-motion.mp4",
-          eventId: "1777813872.301198-5d8ng6"
-        }
-      ],
-      "amcrest-2493e-03": [
-        {
-          title: "Person detection",
-          meta: "Fixed Dome 122 · Frigate event clip",
-          thumb: "/threadgill-assets/clip-122-person.webp",
-          url: "/threadgill-assets/clip-122-person.mp4",
-          eventId: "1777813917.68939-7zxsfg"
-        },
-        {
-          title: "Motion review",
-          meta: "Fixed Dome 122 · Retained Frigate clip",
-          thumb: "/threadgill-assets/clip-122-motion.webp",
-          url: "/threadgill-assets/clip-122-motion.mp4",
-          eventId: "1777813884.223019-7x828h"
-        }
-      ],
-      "anpviz-ptz-06": [
-        {
-          title: "PTZ motion preview",
-          meta: "PTZ Cam 175 · Waiting for retained clip",
-          thumb: "/threadgill-assets/ptz-cam-175.webp"
-        }
-      ]
-    };
+    const clipFeeds = {};
 
     let filter = "all";
     let selected = null;
@@ -1143,7 +1099,7 @@
             eventId: event.id,
             live: true
           }));
-        if (cameraEvents.length) clipFeeds[camera.id] = cameraEvents;
+        clipFeeds[camera.id] = cameraEvents;
       }
       if (selected?.kind === "house") openDetail(selected.id);
     }
@@ -1220,30 +1176,43 @@
       return camera.kind === "trail" ? renderCaptureFeed(camera) : renderClipFeed(camera);
     }
 
+    function renderFeedItem({ active = false, imageClass = "", imageUrl, title, meta, indexName, index, playable = false }) {
+      return `
+        <button class="captureItem ${active ? "active" : ""}" type="button" ${indexName}="${index}">
+          <img class="${imageClass}" src="${imageUrl}" alt="${title}">
+          <div>
+            <strong>${title}</strong>
+            <span>${meta}</span>
+          </div>
+          ${playable ? '<span class="playMark">▶</span>' : ""}
+        </button>
+      `;
+    }
+
     function renderCaptureFeed(camera) {
       if (!camera.images?.length) {
         return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>Loading feed</strong><span>${camera.sourceLabel || camera.zone}</span></div></article></section>`;
       }
       return `
         <section class="captureFeed" aria-label="${camera.name} recent captures">
-          ${camera.images.map((image, index) => `
-            <button class="captureItem ${camera.activeImage?.path === image.path ? "active" : ""}" type="button" data-capture-index="${index}">
-              <img src="${image.url}" alt="${camera.name} capture">
-              <div>
-                <strong>${formatTrailTime(image.capturedAt)}</strong>
-                <span>${camera.sourceLabel || camera.sourceFolder}</span>
-              </div>
-            </button>
-          `).join("")}
+          ${camera.images.map((image, index) => renderFeedItem({
+            active: camera.activeImage?.path === image.path,
+            imageUrl: image.url,
+            title: formatTrailTime(image.capturedAt),
+            meta: camera.sourceLabel || camera.sourceFolder,
+            indexName: "data-capture-index",
+            index
+          })).join("")}
         </section>
       `;
     }
 
     function clipUrl(clip) {
+      if (clip.url) return clip.url;
+      if (!clip.eventId) return "";
       if (apiBase) {
         return `${apiBase}/api/frigate/event/${encodeURIComponent(clip.eventId)}/clip.mp4`;
       }
-      if (!clip.eventId) return "";
       return frigateUrl(`/api/events/${clip.eventId}/clip.mp4`);
     }
 
@@ -1259,16 +1228,15 @@
       }
       return `
         <section class="captureFeed" aria-label="${camera.name} recent clips">
-          ${clips.map((clip, index) => `
-            <button class="captureItem" type="button" data-clip-index="${index}">
-              <img class="${rotationClass(camera)}" src="${clipThumb(clip)}" alt="${clip.title}">
-              <div>
-                <strong>${clip.title}</strong>
-                <span>${clip.meta}</span>
-              </div>
-              <span class="playMark">▶</span>
-            </button>
-          `).join("")}
+          ${clips.map((clip, index) => renderFeedItem({
+            imageClass: rotationClass(camera),
+            imageUrl: clipThumb(clip),
+            title: clip.title,
+            meta: clip.meta,
+            indexName: "data-clip-index",
+            index,
+            playable: true
+          })).join("")}
         </section>
       `;
     }
