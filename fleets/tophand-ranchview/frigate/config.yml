@@ -28,6 +28,10 @@ go2rtc:
       - "rtsp://{FRIGATE_AMCREST_2493E_03_USER}:{FRIGATE_AMCREST_2493E_03_PASSWORD}@192.168.1.122:554/cam/realmonitor?channel=1&subtype=0"
     amcrest_2493e_03_sub:
       - "rtsp://{FRIGATE_AMCREST_2493E_03_USER}:{FRIGATE_AMCREST_2493E_03_PASSWORD}@192.168.1.122:554/cam/realmonitor?channel=1&subtype=1"
+    anpviz_ptz_06_main:
+      - "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/101"
+    anpviz_ptz_06_sub:
+      - "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/102"
 
 record:
   enabled: true
@@ -175,12 +179,12 @@ cameras:
       output_args:
         record: preset-record-generic
       inputs:
-        - path: "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/101"
-          input_args: preset-rtsp-generic
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_06_main
+          input_args: preset-rtsp-restream
           roles:
             - record
-        - path: "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/102"
-          input_args: preset-rtsp-generic
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_06_sub
+          input_args: preset-rtsp-restream
           roles:
             - detect
     detect:
@@ -188,6 +192,10 @@ cameras:
       width: 352
       height: 240
       fps: 2
+    live:
+      streams:
+        main_stream: anpviz_ptz_06_main
+        sub_stream: anpviz_ptz_06_sub
     ui:
       order: 60
 
