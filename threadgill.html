@@ -794,9 +794,9 @@
         <span class="clipTime" id="clipTime">0:00</span>
       </div>
       <article class="motionCard clipFallback" id="clipFallback" hidden>
-        <span>Clip Bridge</span>
-        <strong>Clip playback is ready for the HTTPS bridge.</strong>
-        <p>This public page will play Frigate clips when the TopHand bridge provides a secure clip URL. The page does not expose local camera credentials or private RTSP URLs.</p>
+        <span>Clip</span>
+        <strong>Clip not ready</strong>
+        <p>This recording is still being finalized by Frigate. Pick an older clip or try this one again shortly.</p>
       </article>
       <article class="motionCard" id="clipPlayerInfo">
         <span>Clip</span>
@@ -1349,6 +1349,7 @@
 
       return recordings
         .filter((recording) => Number(recording.start_time) > 0 && Number(recording.end_time) > Number(recording.start_time))
+        .filter((recording) => Number(recording.end_time) < nowSeconds - 90)
         .filter((recording) => Number(recording.motion) > 0 || Number(recording.objects) > 0)
         .sort((a, b) => Number(b.start_time) - Number(a.start_time))
         .slice(0, 8)
