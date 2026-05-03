@@ -6,6 +6,9 @@ const ALLOWED_PATHS = [
   /^\/api\/version$/,
   /^\/api\/events$/,
   /^\/api\/[^/]+\/latest\.jpg$/,
+  /^\/api\/[^/]+\/recordings$/,
+  /^\/api\/[^/]+\/recordings\/[0-9.]+\/snapshot\.jpg$/,
+  /^\/api\/[^/]+\/start\/[0-9.]+\/end\/[0-9.]+\/clip\.mp4$/,
   /^\/api\/events\/[^/]+\/(clip\.mp4|snapshot\.jpg)$/,
 ];
 

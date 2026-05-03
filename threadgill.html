@@ -196,18 +196,21 @@
       transform: rotate(180deg);
     }
 
-    .detailFrame img {
+    .detailZoomSurface {
       --detail-zoom-scale: 1;
       --detail-zoom-x: 0px;
       --detail-zoom-y: 0px;
+      width: 100%;
+      height: 100%;
       touch-action: none;
       transform: translate3d(var(--detail-zoom-x), var(--detail-zoom-y), 0) scale(var(--detail-zoom-scale));
       transform-origin: 0 0;
       will-change: transform;
     }
 
-    .detailFrame img.rotate180 {
-      transform: translate3d(var(--detail-zoom-x), var(--detail-zoom-y), 0) scale(var(--detail-zoom-scale)) rotate(180deg);
+    .detailZoomSurface img {
+      pointer-events: none;
+      user-select: none;
     }
 
     .placeholder {
@@ -1144,7 +1147,7 @@
     }
 
     function getDetailZoomImage() {
-      return detailFrame.querySelector("img");
+      return detailFrame.querySelector("#detailZoomSurface");
     }
 
     function setDetailZoom(scale, x, y) {
@@ -1295,13 +1298,56 @@
       return label ? `${label[0].toUpperCase()}${label.slice(1)} detection` : "Motion event";
     }
 
-    async function loadLiveClips() {
-      const res = await fetch(frigateUrl("/api/events", { limit: 100 }), { cache: "no-store" });
-      if (!res.ok) throw new Error("Frigate events unavailable");
-      const events = await res.json();
-      if (!Array.isArray(events)) return;
+    function recordingActivityText(recording) {
+      if (Number(recording.objects) > 0) return "Object recording";
+      if (Number(recording.motion) > 0) return "Motion recording";
+      return "Recent recording";
+    }
 
-      for (const camera of cameras.filter((item) => item.kind === "house" && item.frigateCamera)) {
+    function recordingDurationText(recording) {
+      const duration = Number(recording.duration || (recording.end_time - recording.start_time));
+      if (!Number.isFinite(duration) || duration <= 0) return "Clip";
+      return `${Math.round(duration)}s`;
+    }
+
+    async function loadRecordingClips(camera, nowSeconds) {
+      const after = nowSeconds - 6 * 60 * 60;
+      const res = await fetch(frigateUrl(`/api/${camera.frigateCamera}/recordings`, { after, before: nowSeconds }), { cache: "no-store" });
+      if (!res.ok) return [];
+      const recordings = await res.json();
+      if (!Array.isArray(recordings)) return [];
+
+      return recordings
+        .filter((recording) => Number(recording.start_time) > 0 && Number(recording.end_time) > Number(recording.start_time))
+        .filter((recording) => Number(recording.motion) > 0 || Number(recording.objects) > 0)
+        .sort((a, b) => Number(b.start_time) - Number(a.start_time))
+        .slice(0, 8)
+        .map((recording) => {
+          const start = Math.floor(Number(recording.start_time));
+          const end = Math.ceil(Number(recording.end_time));
+          const duration = Number(recording.duration || (end - start));
+          return {
+            title: recordingActivityText(recording),
+            meta: `${camera.name} · ${formatTrailTime(start * 1000)} · ${recordingDurationText(recording)}`,
+            recording: true,
+            cameraName: camera.frigateCamera,
+            recordingStart: start,
+            recordingEnd: end,
+            thumbTime: Math.floor(Number(recording.start_time) + Math.max(1, Math.min(4, duration / 2)))
+          };
+        });
+    }
+
+    async function loadLiveClips() {
+      let events = [];
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const res = await fetch(frigateUrl("/api/events", { limit: 100 }), { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) events = data;
+      }
+
+      await Promise.all(cameras.filter((item) => item.kind === "house" && item.frigateCamera).map(async (camera) => {
         const cameraEvents = events
           .filter((event) => event.camera === camera.frigateCamera && event.has_clip && event.id)
           .slice(0, 8)
@@ -1311,8 +1357,8 @@
             eventId: event.id,
             live: true
           }));
-        clipFeeds[camera.id] = cameraEvents;
-      }
+        clipFeeds[camera.id] = cameraEvents.length ? cameraEvents : await loadRecordingClips(camera, nowSeconds);
+      }));
       if (selected?.kind === "house") openDetail(selected.id);
     }
 
@@ -1361,7 +1407,7 @@
       resetDetailZoom();
       const src = imageSrc(selected, true);
       const media = src
-        ? `<img id="detailImage" class="${rotationClass(selected)}" src="${cacheBust(src)}" alt="${selected.name}">`
+        ? `<div id="detailZoomSurface" class="detailZoomSurface"><img id="detailImage" class="${rotationClass(selected)}" src="${cacheBust(src)}" alt="${selected.name}"></div>`
         : `<div class="placeholder">${selected.zone}</div>`;
       detailFrame.innerHTML = `${media}<span class="brandMark">RanchView</span>`;
       detailInfo.innerHTML = `
@@ -1425,6 +1471,9 @@
 
     function clipUrl(clip) {
       if (clip.url) return clip.url;
+      if (clip.recording && clip.cameraName && clip.recordingStart && clip.recordingEnd) {
+        return frigateUrl(`/api/${clip.cameraName}/start/${clip.recordingStart}/end/${clip.recordingEnd}/clip.mp4`);
+      }
       if (!clip.eventId) return "";
       if (apiBase) {
         return `${apiBase}/api/frigate/event/${encodeURIComponent(clip.eventId)}/clip.mp4`;
@@ -1433,6 +1482,9 @@
     }
 
     function clipThumb(clip) {
+      if (clip.recording && clip.cameraName && clip.thumbTime) {
+        return frigateUrl(`/api/${clip.cameraName}/recordings/${clip.thumbTime}/snapshot.jpg`);
+      }
       if (clip.eventId) return frigateUrl(`/api/events/${clip.eventId}/snapshot.jpg`);
       return clip.thumb || "";
     }
@@ -1440,7 +1492,7 @@
     function renderClipFeed(camera) {
       const clips = clipFeeds[camera.id] || [];
       if (!clips.length) {
-        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>No retained clips yet</strong><span>Events exist; playable clips are not retained yet</span></div></article></section>`;
+        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>Loading recordings</strong><span>Waiting for recent motion clips from Frigate</span></div></article></section>`;
       }
       return `
         <section class="captureFeed" aria-label="${camera.name} recent clips">
