@@ -196,6 +196,20 @@
       transform: rotate(180deg);
     }
 
+    .detailFrame img {
+      --detail-zoom-scale: 1;
+      --detail-zoom-x: 0px;
+      --detail-zoom-y: 0px;
+      touch-action: none;
+      transform: translate3d(var(--detail-zoom-x), var(--detail-zoom-y), 0) scale(var(--detail-zoom-scale));
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .detailFrame img.rotate180 {
+      transform: translate3d(var(--detail-zoom-x), var(--detail-zoom-y), 0) scale(var(--detail-zoom-scale)) rotate(180deg);
+    }
+
     .placeholder {
       display: grid;
       place-items: end start;
@@ -706,7 +720,7 @@
       </button>
       <button class="filter" type="button" data-filter="trail">
         <span class="filterIcon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M6 11V8.5A2.5 2.5 0 0 1 8.5 6h7A2.5 2.5 0 0 1 18 8.5V11"></path><path d="M7 11h10l1.5 5.5A2 2 0 0 1 16.6 19H7.4a2 2 0 0 1-1.9-2.5L7 11Z"></path><path d="M8 6 5 3.5"></path><path d="m16 6 3-2.5"></path><circle cx="9.5" cy="14" r="0.9"></circle><circle cx="14.5" cy="14" r="0.9"></circle><path d="M10.5 17h3"></path></svg>
+          <svg viewBox="0 0 24 24"><path d="M4 12.5c0-3.1 2.1-5 5.2-5h4.4c2.5 0 4.4 1.2 5.2 3.2l2.2.7-1.4 2.2.3 2.3h-2.6"></path><path d="M4 12.5 2.6 11"></path><path d="M5.2 9.2 4 7.5"></path><path d="M13.9 7.5 15.4 5"></path><path d="M16.7 8.5 18.2 6"></path><path d="M5 13.4c.8 2.1 2.6 3.1 5.2 3.1h6.9"></path><path d="M8.2 16.5V20"></path><path d="M12 16.5V20"></path><path d="M16 16.4V20"></path><circle cx="17.8" cy="11.6" r=".45"></circle></svg>
         </span>
         <span class="filterLabel">Ranch</span>
       </button>
@@ -946,6 +960,13 @@
     let refreshTimer = null;
     let controlOpen = false;
     const refreshingThumbs = new Map();
+    const detailZoom = {
+      scale: 1,
+      x: 0,
+      y: 0,
+      pinch: null,
+      pan: null
+    };
 
     const grid = document.querySelector("#cameraGrid");
     const syncState = document.querySelector("#syncState");
@@ -1122,6 +1143,87 @@
       if (clipTime) clipTime.textContent = "0:00";
     }
 
+    function getDetailZoomImage() {
+      return detailFrame.querySelector("img");
+    }
+
+    function setDetailZoom(scale, x, y) {
+      const img = getDetailZoomImage();
+      if (!img) return;
+      detailZoom.scale = scale;
+      detailZoom.x = x;
+      detailZoom.y = y;
+      img.style.setProperty("--detail-zoom-scale", String(scale));
+      img.style.setProperty("--detail-zoom-x", `${x}px`);
+      img.style.setProperty("--detail-zoom-y", `${y}px`);
+    }
+
+    function clampDetailZoom(scale = detailZoom.scale, x = detailZoom.x, y = detailZoom.y) {
+      const img = getDetailZoomImage();
+      if (!img || scale <= 1) return { scale: 1, x: 0, y: 0 };
+      const rect = img.getBoundingClientRect();
+      const minX = rect.width * (1 - scale);
+      const minY = rect.height * (1 - scale);
+      return {
+        scale,
+        x: Math.min(0, Math.max(minX, x)),
+        y: Math.min(0, Math.max(minY, y))
+      };
+    }
+
+    function resetDetailZoom() {
+      detailZoom.pinch = null;
+      detailZoom.pan = null;
+      detailZoom.scale = 1;
+      detailZoom.x = 0;
+      detailZoom.y = 0;
+      setDetailZoom(1, 0, 0);
+    }
+
+    function touchPoint(touch) {
+      return { x: touch.clientX, y: touch.clientY };
+    }
+
+    function touchDistance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function touchMidpoint(a, b) {
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+
+    function startDetailPinch(event) {
+      const img = getDetailZoomImage();
+      if (!img || event.touches.length !== 2) return;
+      const first = touchPoint(event.touches[0]);
+      const second = touchPoint(event.touches[1]);
+      const midpoint = touchMidpoint(first, second);
+      const rect = img.getBoundingClientRect();
+      detailZoom.pinch = {
+        distance: touchDistance(first, second),
+        scale: detailZoom.scale,
+        originX: (midpoint.x - rect.left - detailZoom.x) / detailZoom.scale,
+        originY: (midpoint.y - rect.top - detailZoom.y) / detailZoom.scale
+      };
+      detailZoom.pan = null;
+    }
+
+    function updateDetailPinch(event) {
+      const img = getDetailZoomImage();
+      if (!img || !detailZoom.pinch || event.touches.length !== 2) return;
+      const first = touchPoint(event.touches[0]);
+      const second = touchPoint(event.touches[1]);
+      const midpoint = touchMidpoint(first, second);
+      const rect = img.getBoundingClientRect();
+      const nextScale = Math.min(4, Math.max(1, detailZoom.pinch.scale * (touchDistance(first, second) / detailZoom.pinch.distance)));
+      const next = clampDetailZoom(
+        nextScale,
+        midpoint.x - rect.left - detailZoom.pinch.originX * nextScale,
+        midpoint.y - rect.top - detailZoom.pinch.originY * nextScale
+      );
+      setDetailZoom(next.scale, next.x, next.y);
+    }
+
     function publicSupabaseUrl(path) {
       const { data } = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path);
       return data.publicUrl;
@@ -1256,6 +1358,7 @@
       if (!selected) return;
       closePanels();
       closeControl();
+      resetDetailZoom();
       const src = imageSrc(selected, true);
       const media = src
         ? `<img id="detailImage" class="${rotationClass(selected)}" src="${cacheBust(src)}" alt="${selected.name}">`
@@ -1477,6 +1580,52 @@
     document.querySelector("#clipsHome").addEventListener("click", closePanels);
     document.querySelector("#moreHome").addEventListener("click", closePanels);
     controlToggle.addEventListener("click", toggleControl);
+    detailFrame.addEventListener("touchstart", (event) => {
+      if (!getDetailZoomImage()) return;
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        startDetailPinch(event);
+      } else if (event.touches.length === 1 && detailZoom.scale > 1) {
+        event.preventDefault();
+        const point = touchPoint(event.touches[0]);
+        detailZoom.pan = { x: point.x, y: point.y, startX: detailZoom.x, startY: detailZoom.y };
+      }
+    }, { passive: false });
+    detailFrame.addEventListener("touchmove", (event) => {
+      if (!getDetailZoomImage()) return;
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        updateDetailPinch(event);
+      } else if (event.touches.length === 1 && detailZoom.pan && detailZoom.scale > 1) {
+        event.preventDefault();
+        const point = touchPoint(event.touches[0]);
+        const next = clampDetailZoom(
+          detailZoom.scale,
+          detailZoom.pan.startX + point.x - detailZoom.pan.x,
+          detailZoom.pan.startY + point.y - detailZoom.pan.y
+        );
+        setDetailZoom(next.scale, next.x, next.y);
+      }
+    }, { passive: false });
+    detailFrame.addEventListener("touchend", (event) => {
+      if (event.touches.length === 0) {
+        detailZoom.pinch = null;
+        detailZoom.pan = null;
+      } else if (event.touches.length === 1 && detailZoom.scale > 1) {
+        const point = touchPoint(event.touches[0]);
+        detailZoom.pinch = null;
+        detailZoom.pan = { x: point.x, y: point.y, startX: detailZoom.x, startY: detailZoom.y };
+      }
+    });
+    detailFrame.addEventListener("dblclick", () => {
+      if (!getDetailZoomImage()) return;
+      if (detailZoom.scale > 1) {
+        resetDetailZoom();
+      } else {
+        const next = clampDetailZoom(2, -80, -60);
+        setDetailZoom(next.scale, next.x, next.y);
+      }
+    });
     detailInfo.addEventListener("click", (event) => {
       const captureButton = event.target.closest("[data-capture-index]");
       if (captureButton && selected?.kind === "trail") {
