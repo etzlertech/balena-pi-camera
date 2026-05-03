@@ -31,6 +31,22 @@ services:
     environment:
       - TZ=America/Chicago
 
+  edge-control:
+    build:
+      context: .
+      dockerfile: ./edge-control/Dockerfile
+    privileged: true
+    restart: always
+    network_mode: host
+    depends_on:
+      - frigate
+    labels:
+      io.balena.update.strategy: download-then-kill
+    environment:
+      - TZ=America/Chicago
+      - EDGE_CONTROL_PORT=8091
+      - TOPHAND_WIFI_INTERNET_ROUTE=1
+
 volumes:
   frigate_config:
   frigate_media:
