@@ -109,12 +109,39 @@
       min-width: var(--filter-size);
       min-height: 0;
       aspect-ratio: 1 / 1;
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 5px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #202a22;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .filterIcon {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+    }
+
+    .filterIcon svg {
+      width: 25px;
+      height: 25px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .filterLabel {
+      line-height: 1;
     }
 
     .filter.active,
@@ -159,6 +186,10 @@
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+
+    .tile img {
+      background: #253026;
     }
 
     .rotate180 {
@@ -661,10 +692,30 @@
     </header>
 
     <nav class="filters" aria-label="Camera filters">
-      <button class="filter active" type="button" data-filter="all">All</button>
-      <button class="filter" type="button" data-filter="house">House</button>
-      <button class="filter" type="button" data-filter="trail">Ranch</button>
-      <button class="filter" type="button" data-filter="alerts">Alerts</button>
+      <button class="filter active" type="button" data-filter="all">
+        <span class="filterIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"></rect><rect x="14" y="4" width="6" height="6"></rect><rect x="4" y="14" width="6" height="6"></rect><rect x="14" y="14" width="6" height="6"></rect></svg>
+        </span>
+        <span class="filterLabel">All</span>
+      </button>
+      <button class="filter" type="button" data-filter="house">
+        <span class="filterIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path><path d="M9.5 20v-6h5v6"></path></svg>
+        </span>
+        <span class="filterLabel">House</span>
+      </button>
+      <button class="filter" type="button" data-filter="trail">
+        <span class="filterIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M6 11V8.5A2.5 2.5 0 0 1 8.5 6h7A2.5 2.5 0 0 1 18 8.5V11"></path><path d="M7 11h10l1.5 5.5A2 2 0 0 1 16.6 19H7.4a2 2 0 0 1-1.9-2.5L7 11Z"></path><path d="M8 6 5 3.5"></path><path d="m16 6 3-2.5"></path><circle cx="9.5" cy="14" r="0.9"></circle><circle cx="14.5" cy="14" r="0.9"></circle><path d="M10.5 17h3"></path></svg>
+        </span>
+        <span class="filterLabel">Ranch</span>
+      </button>
+      <button class="filter" type="button" data-filter="alerts">
+        <span class="filterIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3 2.8 19h18.4L12 3Z"></path><path d="M12 8v5"></path><path d="M12 17h.01"></path></svg>
+        </span>
+        <span class="filterLabel">Alerts</span>
+      </button>
     </nav>
 
     <main class="grid" id="cameraGrid" aria-live="polite"></main>
@@ -806,6 +857,8 @@
     const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const FRIGATE_PROXY = "/api/threadgill/frigate";
     const CONTROL_PROXY = "/api/threadgill/control";
+    const THUMB_CACHE_NAME = "threadgill-home-thumbs-v1";
+    const THUMB_REFRESH_MS = 15000;
 
     const cameras = [
       {
@@ -892,6 +945,7 @@
     let selected = null;
     let refreshTimer = null;
     let controlOpen = false;
+    const refreshingThumbs = new Map();
 
     const grid = document.querySelector("#cameraGrid");
     const syncState = document.querySelector("#syncState");
@@ -942,6 +996,62 @@
       if (!url) return "";
       const separator = url.includes("?") ? "&" : "?";
       return `${url}${separator}v=${Date.now()}`;
+    }
+
+    function thumbCacheRequest(camera) {
+      return new Request(`${window.location.origin}/threadgill-thumb-cache/${encodeURIComponent(camera.id)}`);
+    }
+
+    function releaseCachedThumb(camera) {
+      if (camera.cachedThumb?.startsWith("blob:")) URL.revokeObjectURL(camera.cachedThumb);
+    }
+
+    async function hydrateThumbCache() {
+      if (!("caches" in window)) return;
+      try {
+        const cache = await caches.open(THUMB_CACHE_NAME);
+        await Promise.all(cameras.map(async (camera) => {
+          const response = await cache.match(thumbCacheRequest(camera));
+          if (!response) return;
+          const blob = await response.blob();
+          if (!blob.type.startsWith("image/")) return;
+          releaseCachedThumb(camera);
+          camera.cachedThumb = URL.createObjectURL(blob);
+        }));
+        renderGrid();
+      } catch {
+        // Cache storage is a performance layer only. The live URLs still work without it.
+      }
+    }
+
+    async function refreshHomeThumb(camera, img, liveSrc) {
+      if (!("caches" in window) || !liveSrc) return;
+      const now = Date.now();
+      if (camera.lastThumbSource === liveSrc && camera.lastThumbRefresh && now - camera.lastThumbRefresh < THUMB_REFRESH_MS) return;
+      if (refreshingThumbs.get(camera.id) === liveSrc) return;
+      refreshingThumbs.set(camera.id, liveSrc);
+      try {
+        const response = await fetch(cacheBust(liveSrc), { cache: "no-store" });
+        if (!response.ok) return;
+        const contentType = response.headers.get("content-type") || "image/jpeg";
+        if (!contentType.startsWith("image/")) return;
+        const blob = await response.blob();
+        if (!blob.size) return;
+
+        const cache = await caches.open(THUMB_CACHE_NAME);
+        await cache.put(thumbCacheRequest(camera), new Response(blob, { headers: { "Content-Type": contentType } }));
+
+        const objectUrl = URL.createObjectURL(blob);
+        releaseCachedThumb(camera);
+        camera.cachedThumb = objectUrl;
+        camera.lastThumbSource = liveSrc;
+        camera.lastThumbRefresh = now;
+        if (img?.isConnected && img.dataset.cameraId === camera.id) img.src = objectUrl;
+      } catch {
+        // Keep the previous thumbnail visible when the live bridge or Supabase is slow.
+      } finally {
+        if (refreshingThumbs.get(camera.id) === liveSrc) refreshingThumbs.delete(camera.id);
+      }
     }
 
     function rotationClass(camera) {
@@ -1120,8 +1230,9 @@
         tile.className = `tile ${camera.kind}`;
         tile.type = "button";
         const src = imageSrc(camera);
-        const media = src
-          ? `<img class="${rotationClass(camera)}" src="${cacheBust(src)}" alt="${camera.name}" loading="eager">`
+        const initialSrc = camera.cachedThumb || (src ? cacheBust(src) : "");
+        const media = initialSrc
+          ? `<img class="${rotationClass(camera)}" data-camera-id="${camera.id}" src="${initialSrc}" alt="${camera.name}" loading="eager">`
           : `<div class="placeholder">${camera.zone}</div>`;
         tile.innerHTML = `
           ${media}
@@ -1135,6 +1246,8 @@
         `;
         tile.addEventListener("click", () => openDetail(camera.id));
         grid.appendChild(tile);
+        const img = tile.querySelector("img[data-camera-id]");
+        if (img && src) refreshHomeThumb(camera, img, src);
       }
     }
 
@@ -1224,7 +1337,7 @@
     function renderClipFeed(camera) {
       const clips = clipFeeds[camera.id] || [];
       if (!clips.length) {
-        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>No clips indexed</strong><span>Waiting for Frigate bridge</span></div></article></section>`;
+        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>No retained clips yet</strong><span>Events exist; playable clips are not retained yet</span></div></article></section>`;
       }
       return `
         <section class="captureFeed" aria-label="${camera.name} recent clips">
@@ -1410,6 +1523,7 @@
     });
 
     renderGrid();
+    hydrateThumbCache().catch(() => {});
     loadLiveClips().catch(() => {
       syncState.textContent = apiBase ? "Bridge" : "Live bridge retrying";
     });
