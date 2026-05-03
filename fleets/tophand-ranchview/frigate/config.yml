@@ -59,6 +59,8 @@ objects:
   track:
     - person
     - car
+    - dog
+    - cat
 
 birdseye:
   enabled: true
