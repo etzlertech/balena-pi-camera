@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111713">
   <title>RanchView Threadgill</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -352,7 +353,8 @@
     }
 
     .detailInfo dl,
-    .motionList {
+    .motionList,
+    .trailGallery {
       margin: 0;
       display: grid;
       gap: 8px;
@@ -508,6 +510,56 @@
       line-height: 1.3;
     }
 
+    .trailGallery {
+      max-height: 180px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .trailItem {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      min-height: 58px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #111713;
+    }
+
+    .trailItem img {
+      width: 74px;
+      height: 58px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .trailItem div {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+      padding-right: 8px;
+    }
+
+    .trailItem strong,
+    .trailItem span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trailItem strong {
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .trailItem span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
     @media (min-width: 640px) {
       .detailInfo {
         top: calc(50svh - env(safe-area-inset-top) - 68px + 132px);
@@ -639,6 +691,11 @@
       return (window.localStorage.getItem("threadgillApiBase") || "").replace(/\/$/, "");
     })();
 
+    const SUPABASE_URL = "https://dtzayqhebbrbvordmabh.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w";
+    const SUPABASE_BUCKET = "spypoint-images";
+    const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     const cameras = [
       {
         id: "amcrest-mt2544ew-01",
@@ -690,7 +747,10 @@
         zone: "Trail",
         kind: "trail",
         type: "Latest",
+        sourceLabel: "M7 Highway Gate",
+        sourceFolder: "M7-highwayGate",
         sample: "",
+        images: [],
         ptz: false,
         zoom: false,
         rotation: 0
@@ -701,7 +761,10 @@
         zone: "Trail",
         kind: "trail",
         type: "Latest",
+        sourceLabel: "Pastucha Pond",
+        sourceFolder: "QC",
         sample: "",
+        images: [],
         ptz: false,
         zoom: false,
         rotation: 0
@@ -731,6 +794,9 @@
         const suffix = detail ? "?view=detail" : "";
         return `${apiBase}/api/snapshot/${encodeURIComponent(camera.id)}.jpg${suffix}`;
       }
+      if (camera.kind === "trail" && camera.latestImage?.url) {
+        return camera.latestImage.url;
+      }
       return camera.sample;
     }
 
@@ -746,8 +812,98 @@
 
     function statusText(camera) {
       if (apiBase && camera.kind === "house") return "Live";
+      if (camera.kind === "trail" && camera.latestImage) return "Latest";
+      if (camera.kind === "trail" && camera.sourceFolder) return "Loading";
       if (camera.kind === "trail") return "Pending";
       return "Sample";
+    }
+
+    function parseCaptureDate(filename, fallback) {
+      const match = filename.match(/_S?_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+      if (match) {
+        const [, year, month, day, hour, minute] = match;
+        return `${year}-${month}-${day}T${hour}:${minute}:00`;
+      }
+      const match2 = filename.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+      if (match2) {
+        const [, year, month, day, hour, minute] = match2;
+        return `${year}-${month}-${day}T${hour}:${minute}:00`;
+      }
+      return fallback || null;
+    }
+
+    function formatTrailTime(value) {
+      if (!value) return "Awaiting capture";
+      return new Date(value).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function publicSupabaseUrl(path) {
+      const { data } = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path);
+      return data.publicUrl;
+    }
+
+    async function listTrailFiles(root, path = "", hidden = new Set()) {
+      if (!supabaseClient) return [];
+      const fullPath = path ? `${root}/${path}` : root;
+      const { data, error } = await supabaseClient.storage
+        .from(SUPABASE_BUCKET)
+        .list(fullPath, { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
+      if (error || !data) return [];
+
+      const files = [];
+      for (const item of data) {
+        if (item.id === null) {
+          const folder = item.name.toLowerCase();
+          if (folder.includes("thumb") || folder === "hd") continue;
+          const childPath = path ? `${path}/${item.name}` : item.name;
+          files.push(...await listTrailFiles(root, childPath, hidden));
+          continue;
+        }
+        const filePath = path ? `${root}/${path}/${item.name}` : `${root}/${item.name}`;
+        const lower = filePath.toLowerCase();
+        const isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp");
+        const isThumb = lower.includes("/thumb") || item.name.toLowerCase().includes("thumb");
+        if (!isImage || isThumb || hidden.has(filePath)) continue;
+        const capturedAt = parseCaptureDate(item.name, item.created_at);
+        files.push({
+          name: item.name,
+          path: filePath,
+          url: publicSupabaseUrl(filePath),
+          capturedAt
+        });
+      }
+      return files;
+    }
+
+    async function loadHiddenTrailPaths() {
+      if (!supabaseClient) return new Set();
+      try {
+        const { data, error } = await supabaseClient
+          .from("images")
+          .select("storage_path")
+          .eq("is_hidden", true);
+        if (error || !data) return new Set();
+        return new Set(data.map((image) => image.storage_path).filter(Boolean));
+      } catch {
+        return new Set();
+      }
+    }
+
+    async function loadTrailFeeds() {
+      const hidden = await loadHiddenTrailPaths();
+      await Promise.all(cameras.filter((camera) => camera.kind === "trail" && camera.sourceFolder).map(async (camera) => {
+        const images = await listTrailFiles(camera.sourceFolder, "", hidden);
+        images.sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt));
+        camera.images = images.slice(0, 12);
+        camera.latestImage = camera.images[0] || null;
+      }));
+      renderGrid();
+      if (selected?.kind === "trail") openDetail(selected.id);
     }
 
     function visibleCameras() {
@@ -772,7 +928,7 @@
         tile.innerHTML = `
           ${media}
           <span class="brandMark">RanchView</span>
-          <span class="status ${apiBase || camera.sample ? "" : "warn"}"></span>
+          <span class="status ${apiBase || camera.sample || camera.latestImage ? "" : "warn"}"></span>
           <span class="tileText">
             <strong>${camera.name}</strong>
             <span>${camera.zone}</span>
@@ -798,9 +954,10 @@
         <h2>${selected.name}</h2>
         <dl>
           <div><dt>Zone</dt><dd>${selected.zone}</dd></div>
-          <div><dt>Source</dt><dd>${selected.type}</dd></div>
-          <div><dt>Status</dt><dd>${statusText(selected)}</dd></div>
+          <div><dt>Source</dt><dd>${selected.sourceLabel || selected.type}</dd></div>
+          <div><dt>Status</dt><dd>${selected.latestImage ? formatTrailTime(selected.latestImage.capturedAt) : statusText(selected)}</dd></div>
         </dl>
+        ${selected.kind === "trail" ? renderTrailGallery(selected) : ""}
       `;
       const hasControl = selected.ptz || selected.zoom;
       detailNav.classList.toggle("hasControl", hasControl);
@@ -815,6 +972,25 @@
           if (img) img.src = cacheBust(src);
         }, 1400);
       }
+    }
+
+    function renderTrailGallery(camera) {
+      if (!camera.images?.length) {
+        return `<section class="trailGallery"><article class="trailItem"><div></div><div><strong>Loading feed</strong><span>${camera.sourceLabel || camera.zone}</span></div></article></section>`;
+      }
+      return `
+        <section class="trailGallery" aria-label="${camera.name} recent captures">
+          ${camera.images.map((image) => `
+            <article class="trailItem">
+              <img src="${image.url}" alt="${camera.name} capture">
+              <div>
+                <strong>${formatTrailTime(image.capturedAt)}</strong>
+                <span>${camera.sourceLabel || camera.sourceFolder}</span>
+              </div>
+            </article>
+          `).join("")}
+        </section>
+      `;
     }
 
     function closeDetail() {
@@ -905,6 +1081,9 @@
     });
 
     renderGrid();
+    loadTrailFeeds().catch(() => {
+      syncState.textContent = apiBase ? "Bridge" : "Preview";
+    });
   </script>
 </body>
 </html>
