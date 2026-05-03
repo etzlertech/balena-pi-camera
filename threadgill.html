@@ -146,7 +146,10 @@
 
     .tile img,
     .tile .placeholder,
-    .detailFrame img {
+    .detailFrame img,
+    .detailFrame video,
+    .clipVideoShell video,
+    .clipVideoShell img {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -315,37 +318,42 @@
     .detailStage {
       position: relative;
       min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
       overflow: hidden;
     }
 
     .detailFrame {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: calc(50svh - env(safe-area-inset-top) - 68px);
-      transform: translateY(-50%);
+      position: relative;
       width: 100%;
       aspect-ratio: 16 / 9;
       overflow: hidden;
       background: #000;
-      transition: top 180ms ease;
+      transition: opacity 180ms ease;
     }
 
     .detailScreen.aiming .detailFrame {
-      top: calc(35svh - env(safe-area-inset-top) - 68px);
+      opacity: 0.92;
     }
 
     .detailInfo {
-      position: absolute;
-      left: 12px;
-      right: 12px;
-      top: calc(50svh - env(safe-area-inset-top) - 68px + 30vw);
+      position: relative;
+      min-height: 0;
+      margin: 0 12px 12px;
       display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
       gap: 8px;
+      overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       background: var(--panel);
+    }
+
+    .detailScreen.aiming .detailInfo {
+      opacity: 0.18;
+      pointer-events: none;
     }
 
     .detailInfo h2 {
@@ -354,7 +362,7 @@
 
     .detailInfo dl,
     .motionList,
-    .trailGallery {
+    .captureFeed {
       margin: 0;
       display: grid;
       gap: 8px;
@@ -386,7 +394,7 @@
       position: absolute;
       left: 12px;
       right: 12px;
-      top: calc(35svh - env(safe-area-inset-top) - 68px + 30vw);
+      top: calc(min(100vw, 430px) * 0.5625 + 8px);
       z-index: 3;
       display: none;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -510,13 +518,13 @@
       line-height: 1.3;
     }
 
-    .trailGallery {
-      max-height: 180px;
+    .captureFeed {
+      min-height: 0;
       overflow-y: auto;
       padding-right: 2px;
     }
 
-    .trailItem {
+    .captureItem {
       display: grid;
       grid-template-columns: 74px minmax(0, 1fr);
       gap: 8px;
@@ -526,48 +534,70 @@
       border-radius: 8px;
       overflow: hidden;
       background: #111713;
+      color: var(--ink);
+      padding: 0;
+      text-align: left;
     }
 
-    .trailItem img {
+    .captureItem.active {
+      border-color: var(--accent);
+      background: rgba(201, 223, 122, 0.09);
+    }
+
+    .captureItem img {
       width: 74px;
       height: 58px;
       object-fit: cover;
       display: block;
     }
 
-    .trailItem div {
+    .captureItem div {
       min-width: 0;
       display: grid;
       gap: 2px;
       padding-right: 8px;
     }
 
-    .trailItem strong,
-    .trailItem span {
+    .captureItem strong,
+    .captureItem span {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .trailItem strong {
+    .captureItem strong {
       font-size: 12px;
       font-weight: 900;
     }
 
-    .trailItem span {
+    .captureItem span {
       color: var(--muted);
       font-size: 10px;
       font-weight: 800;
     }
 
-    @media (min-width: 640px) {
-      .detailInfo {
-        top: calc(50svh - env(safe-area-inset-top) - 68px + 132px);
-      }
+    .captureItem .playMark {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(244, 245, 239, 0.92);
+      color: #111713;
+      font-size: 10px;
+      font-weight: 900;
+    }
 
-      .controlPanel {
-        top: calc(35svh - env(safe-area-inset-top) - 68px + 132px);
-      }
+    .clipVideoShell {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #000;
+    }
+
+    .clipFallback[hidden] {
+      display: none;
     }
   </style>
 </head>
@@ -629,6 +659,31 @@
     <nav class="detailNav" id="detailNav" aria-label="Camera navigation">
       <button class="navButton active" id="detailHome" type="button">Home</button>
       <button class="navButton" id="controlToggle" type="button" hidden>Aim Cam</button>
+    </nav>
+  </section>
+
+  <section class="panelScreen" id="clipPlayerScreen" aria-hidden="true">
+    <header class="detailTop">
+      <p class="eyebrow">TopHand</p>
+      <h1>RanchView</h1>
+    </header>
+    <main class="panelBody">
+      <div class="clipVideoShell" id="clipVideoShell">
+        <video id="clipVideo" playsinline controls preload="metadata"></video>
+      </div>
+      <article class="motionCard clipFallback" id="clipFallback" hidden>
+        <span>Clip Bridge</span>
+        <strong>Clip playback is ready for the HTTPS bridge.</strong>
+        <p>This public page will play Frigate clips when the TopHand bridge provides a secure clip URL. The page does not expose local camera credentials or private RTSP URLs.</p>
+      </article>
+      <article class="motionCard" id="clipPlayerInfo">
+        <span>Clip</span>
+        <strong>Select a clip</strong>
+        <p>Choose a house camera clip card from the detail screen.</p>
+      </article>
+    </main>
+    <nav class="detailNav" aria-label="Clip navigation">
+      <button class="navButton active" id="clipPlayerHome" type="button">Back</button>
     </nav>
   </section>
 
@@ -695,6 +750,7 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0emF5cWhlYmJyYnZvcmRtYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2ODA2NzIsImV4cCI6MjA4NDI1NjY3Mn0.hlDn444h_cxDf7BB3C3e68VrOfXtiljtsIwd0L1iF1w";
     const SUPABASE_BUCKET = "spypoint-images";
     const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const FRIGATE_PROXY = "/api/threadgill/frigate";
 
     const cameras = [
       {
@@ -703,6 +759,7 @@
         zone: "Ranch House",
         kind: "house",
         type: "Zoom",
+        frigateCamera: "amcrest_mt2544ew_01",
         sample: "/threadgill-assets/zoom-cam-120.webp",
         ptz: false,
         zoom: true,
@@ -714,6 +771,7 @@
         zone: "Ranch House",
         kind: "house",
         type: "Zoom",
+        frigateCamera: "amcrest_mt2544ew_02",
         sample: "/threadgill-assets/zoom-cam-121.webp",
         ptz: false,
         zoom: true,
@@ -725,6 +783,7 @@
         zone: "Ranch House",
         kind: "house",
         type: "Fixed",
+        frigateCamera: "amcrest_2493e_03",
         sample: "/threadgill-assets/fixed-dome-122.webp",
         ptz: false,
         zoom: false,
@@ -736,6 +795,7 @@
         zone: "Ranch House",
         kind: "house",
         type: "PTZ",
+        frigateCamera: "anpviz_ptz_06",
         sample: "/threadgill-assets/ptz-cam-175.webp",
         ptz: true,
         zoom: true,
@@ -771,6 +831,64 @@
       }
     ];
 
+    const clipFeeds = {
+      "amcrest-mt2544ew-01": [
+        {
+          title: "Person detection",
+          meta: "Zoom Cam 120 · Frigate event clip",
+          thumb: "/threadgill-assets/clip-120-person.webp",
+          url: "/threadgill-assets/clip-120-person.mp4",
+          eventId: "1777813886.326724-r086v2"
+        },
+        {
+          title: "Long motion event",
+          meta: "Zoom Cam 120 · Retained Frigate clip",
+          thumb: "/threadgill-assets/clip-120-long.webp",
+          url: "/threadgill-assets/clip-120-long.mp4",
+          eventId: "1777813139.418205-qzag59"
+        }
+      ],
+      "amcrest-mt2544ew-02": [
+        {
+          title: "Person detection",
+          meta: "Zoom Cam 121 · Frigate event clip",
+          thumb: "/threadgill-assets/clip-121-person.webp",
+          url: "/threadgill-assets/clip-121-person.mp4",
+          eventId: "1777813933.766264-f6pw0j"
+        },
+        {
+          title: "Motion clip",
+          meta: "Zoom Cam 121 · Retained Frigate clip",
+          thumb: "/threadgill-assets/clip-121-motion.webp",
+          url: "/threadgill-assets/clip-121-motion.mp4",
+          eventId: "1777813872.301198-5d8ng6"
+        }
+      ],
+      "amcrest-2493e-03": [
+        {
+          title: "Person detection",
+          meta: "Fixed Dome 122 · Frigate event clip",
+          thumb: "/threadgill-assets/clip-122-person.webp",
+          url: "/threadgill-assets/clip-122-person.mp4",
+          eventId: "1777813917.68939-7zxsfg"
+        },
+        {
+          title: "Motion review",
+          meta: "Fixed Dome 122 · Retained Frigate clip",
+          thumb: "/threadgill-assets/clip-122-motion.webp",
+          url: "/threadgill-assets/clip-122-motion.mp4",
+          eventId: "1777813884.223019-7x828h"
+        }
+      ],
+      "anpviz-ptz-06": [
+        {
+          title: "PTZ motion preview",
+          meta: "PTZ Cam 175 · Waiting for retained clip",
+          thumb: "/threadgill-assets/ptz-cam-175.webp"
+        }
+      ]
+    };
+
     let filter = "all";
     let selected = null;
     let refreshTimer = null;
@@ -786,16 +904,34 @@
     const controlPanel = document.querySelector("#controlPanel");
     const controlTitle = document.querySelector("#controlTitle");
     const controlStatus = document.querySelector("#controlStatus");
+    const clipPlayerScreen = document.querySelector("#clipPlayerScreen");
+    const clipVideoShell = document.querySelector("#clipVideoShell");
+    const clipVideo = document.querySelector("#clipVideo");
+    const clipFallback = document.querySelector("#clipFallback");
+    const clipPlayerInfo = document.querySelector("#clipPlayerInfo");
     const clipsScreen = document.querySelector("#clipsScreen");
     const moreScreen = document.querySelector("#moreScreen");
+
+    function frigateUrl(path, params = {}) {
+      const query = new URLSearchParams({ path });
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) query.set(key, String(value));
+      }
+      return `${FRIGATE_PROXY}?${query.toString()}`;
+    }
 
     function imageSrc(camera, detail = false) {
       if (apiBase && camera.kind === "house") {
         const suffix = detail ? "?view=detail" : "";
         return `${apiBase}/api/snapshot/${encodeURIComponent(camera.id)}.jpg${suffix}`;
       }
-      if (camera.kind === "trail" && camera.latestImage?.url) {
-        return camera.latestImage.url;
+      if (camera.kind === "house" && camera.frigateCamera) {
+        return frigateUrl(`/api/${camera.frigateCamera}/latest.jpg`);
+      }
+      if (camera.kind === "trail") {
+        return detail
+          ? (camera.activeImage?.url || camera.latestImage?.url || camera.sample)
+          : (camera.latestImage?.url || camera.sample);
       }
       return camera.sample;
     }
@@ -812,6 +948,7 @@
 
     function statusText(camera) {
       if (apiBase && camera.kind === "house") return "Live";
+      if (camera.kind === "house" && camera.frigateCamera) return "Live";
       if (camera.kind === "trail" && camera.latestImage) return "Latest";
       if (camera.kind === "trail" && camera.sourceFolder) return "Loading";
       if (camera.kind === "trail") return "Pending";
@@ -901,9 +1038,37 @@
         images.sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt));
         camera.images = images.slice(0, 12);
         camera.latestImage = camera.images[0] || null;
+        if (!camera.activeImage) camera.activeImage = camera.latestImage;
       }));
       renderGrid();
       if (selected?.kind === "trail") openDetail(selected.id);
+    }
+
+    function eventLabelText(label) {
+      if (label === "person") return "Person detection";
+      if (label === "car") return "Vehicle detection";
+      return label ? `${label[0].toUpperCase()}${label.slice(1)} detection` : "Motion event";
+    }
+
+    async function loadLiveClips() {
+      const res = await fetch(frigateUrl("/api/events", { limit: 100 }), { cache: "no-store" });
+      if (!res.ok) throw new Error("Frigate events unavailable");
+      const events = await res.json();
+      if (!Array.isArray(events)) return;
+
+      for (const camera of cameras.filter((item) => item.kind === "house" && item.frigateCamera)) {
+        const cameraEvents = events
+          .filter((event) => event.camera === camera.frigateCamera && event.has_clip && event.id)
+          .slice(0, 8)
+          .map((event) => ({
+            title: eventLabelText(event.label),
+            meta: `${camera.name} · ${formatTrailTime(event.start_time ? event.start_time * 1000 : null)}`,
+            eventId: event.id,
+            live: true
+          }));
+        if (cameraEvents.length) clipFeeds[camera.id] = cameraEvents;
+      }
+      if (selected?.kind === "house") openDetail(selected.id);
     }
 
     function visibleCameras() {
@@ -957,7 +1122,7 @@
           <div><dt>Source</dt><dd>${selected.sourceLabel || selected.type}</dd></div>
           <div><dt>Status</dt><dd>${selected.latestImage ? formatTrailTime(selected.latestImage.capturedAt) : statusText(selected)}</dd></div>
         </dl>
-        ${selected.kind === "trail" ? renderTrailGallery(selected) : ""}
+        ${renderDetailFeed(selected)}
       `;
       const hasControl = selected.ptz || selected.zoom;
       detailNav.classList.toggle("hasControl", hasControl);
@@ -974,23 +1139,93 @@
       }
     }
 
-    function renderTrailGallery(camera) {
+    function renderDetailFeed(camera) {
+      return camera.kind === "trail" ? renderCaptureFeed(camera) : renderClipFeed(camera);
+    }
+
+    function renderCaptureFeed(camera) {
       if (!camera.images?.length) {
-        return `<section class="trailGallery"><article class="trailItem"><div></div><div><strong>Loading feed</strong><span>${camera.sourceLabel || camera.zone}</span></div></article></section>`;
+        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>Loading feed</strong><span>${camera.sourceLabel || camera.zone}</span></div></article></section>`;
       }
       return `
-        <section class="trailGallery" aria-label="${camera.name} recent captures">
-          ${camera.images.map((image) => `
-            <article class="trailItem">
+        <section class="captureFeed" aria-label="${camera.name} recent captures">
+          ${camera.images.map((image, index) => `
+            <button class="captureItem ${camera.activeImage?.path === image.path ? "active" : ""}" type="button" data-capture-index="${index}">
               <img src="${image.url}" alt="${camera.name} capture">
               <div>
                 <strong>${formatTrailTime(image.capturedAt)}</strong>
                 <span>${camera.sourceLabel || camera.sourceFolder}</span>
               </div>
-            </article>
+            </button>
           `).join("")}
         </section>
       `;
+    }
+
+    function clipUrl(clip) {
+      if (apiBase) {
+        return `${apiBase}/api/frigate/event/${encodeURIComponent(clip.eventId)}/clip.mp4`;
+      }
+      if (!clip.eventId) return "";
+      return frigateUrl(`/api/events/${clip.eventId}/clip.mp4`);
+    }
+
+    function clipThumb(clip) {
+      if (clip.eventId) return frigateUrl(`/api/events/${clip.eventId}/snapshot.jpg`);
+      return clip.thumb || "";
+    }
+
+    function renderClipFeed(camera) {
+      const clips = clipFeeds[camera.id] || [];
+      if (!clips.length) {
+        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>No clips indexed</strong><span>Waiting for Frigate bridge</span></div></article></section>`;
+      }
+      return `
+        <section class="captureFeed" aria-label="${camera.name} recent clips">
+          ${clips.map((clip, index) => `
+            <button class="captureItem" type="button" data-clip-index="${index}">
+              <img src="${clipThumb(clip)}" alt="${clip.title}">
+              <div>
+                <strong>${clip.title}</strong>
+                <span>${clip.meta}</span>
+              </div>
+              <span class="playMark">▶</span>
+            </button>
+          `).join("")}
+        </section>
+      `;
+    }
+
+    function openClip(index) {
+      if (!selected) return;
+      const clip = (clipFeeds[selected.id] || [])[Number(index)];
+      if (!clip) return;
+      const url = clipUrl(clip);
+      clipVideo.pause();
+      clipVideo.removeAttribute("src");
+      clipVideo.poster = clipThumb(clip);
+      clipFallback.hidden = Boolean(url);
+      clipVideo.hidden = !url;
+      clipVideoShell.innerHTML = "";
+      clipVideoShell.appendChild(clipVideo);
+      clipPlayerInfo.innerHTML = `
+        <span>${selected.name}</span>
+        <strong>${clip.title}</strong>
+        <p>${url ? "Playing from the live Threadgill Frigate bridge." : "No retained clip URL is available for this card yet."}</p>
+      `;
+      if (url) {
+        clipVideo.src = url;
+        clipVideo.load();
+        clipVideo.play().catch(() => {});
+      }
+      clipPlayerScreen.setAttribute("aria-hidden", "false");
+    }
+
+    function closeClipPlayer() {
+      clipVideo.pause();
+      clipVideo.removeAttribute("src");
+      clipVideo.load();
+      clipPlayerScreen.setAttribute("aria-hidden", "true");
     }
 
     function closeDetail() {
@@ -998,10 +1233,12 @@
       refreshTimer = null;
       selected = null;
       closeControl();
+      closeClipPlayer();
       detailScreen.setAttribute("aria-hidden", "true");
     }
 
     function closePanels() {
+      closeClipPlayer();
       clipsScreen.setAttribute("aria-hidden", "true");
       moreScreen.setAttribute("aria-hidden", "true");
     }
@@ -1070,17 +1307,41 @@
     document.querySelector("#clipsHome").addEventListener("click", closePanels);
     document.querySelector("#moreHome").addEventListener("click", closePanels);
     controlToggle.addEventListener("click", toggleControl);
+    detailInfo.addEventListener("click", (event) => {
+      const captureButton = event.target.closest("[data-capture-index]");
+      if (captureButton && selected?.kind === "trail") {
+        const image = selected.images[Number(captureButton.dataset.captureIndex)];
+        if (image) {
+          selected.activeImage = image;
+          openDetail(selected.id);
+        }
+        return;
+      }
+      const clipButton = event.target.closest("[data-clip-index]");
+      if (clipButton && selected?.kind === "house") {
+        openClip(clipButton.dataset.clipIndex);
+      }
+    });
     document.querySelectorAll("[data-control]").forEach((button) => {
       button.addEventListener("click", () => sendControl(button.dataset.control));
     });
+    document.querySelector("#clipPlayerHome").addEventListener("click", closeClipPlayer);
+    clipVideo.addEventListener("error", () => {
+      clipFallback.hidden = false;
+      clipPlayerInfo.querySelector("p").textContent = "This clip source is not available from the current demo media service.";
+    });
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        closeClipPlayer();
         closeDetail();
         closePanels();
       }
     });
 
     renderGrid();
+    loadLiveClips().catch(() => {
+      syncState.textContent = apiBase ? "Bridge" : "Live bridge retrying";
+    });
     loadTrailFeeds().catch(() => {
       syncState.textContent = apiBase ? "Bridge" : "Preview";
     });

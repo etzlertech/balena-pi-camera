@@ -12,9 +12,17 @@
     {
       "src": "threadgill-assets/**",
       "use": "@vercel/static"
+    },
+    {
+      "src": "api/threadgill/frigate.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/threadgill/frigate",
+      "dest": "/api/threadgill/frigate.js"
+    },
     {
       "src": "/threadgill/?",
       "dest": "/threadgill.html"
