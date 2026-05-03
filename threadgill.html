@@ -862,10 +862,10 @@
       const params = new URLSearchParams(window.location.search);
       const queryApi = params.get("api");
       if (queryApi) {
-        window.localStorage.setItem("threadgillApiBase", queryApi.replace(/\/$/, ""));
         return queryApi.replace(/\/$/, "");
       }
-      return (window.localStorage.getItem("threadgillApiBase") || "").replace(/\/$/, "");
+      window.localStorage.removeItem("threadgillApiBase");
+      return "";
     })();
 
     const SUPABASE_URL = "https://dtzayqhebbrbvordmabh.supabase.co";
