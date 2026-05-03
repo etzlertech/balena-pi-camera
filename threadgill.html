@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111713">
+  <title>RanchView Threadgill</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111713;
+      --panel: #19211b;
+      --ink: #f4f5ef;
+      --muted: #aab3a7;
+      --line: rgba(255, 255, 255, 0.14);
+      --accent: #c9df7a;
+      --rust: #c15b3a;
+      --warn: #f3c15f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: #0b0f0d;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      overflow: hidden;
+    }
+
+    button {
+      font: inherit;
+      touch-action: manipulation;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 430px;
+      height: 100%;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      background: var(--bg);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    .topbar {
+      grid-row: 1;
+      height: calc(env(safe-area-inset-top) + 64px);
+      padding: calc(env(safe-area-inset-top) + 9px) 12px 7px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 1px;
+      color: var(--rust);
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .sync {
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .filters {
+      grid-row: 2;
+      height: 104px;
+      padding: 8px 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .filter {
+      min-width: 0;
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .filter.active,
+    .navButton.active {
+      background: var(--ink);
+      color: #111713;
+    }
+
+    .grid {
+      grid-row: 3;
+      min-height: 0;
+      padding: 3px 10px 8px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(3, auto);
+      gap: 8px;
+      align-content: start;
+      overflow: hidden;
+    }
+
+    .tile {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: 1 / 1;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      background: #253026;
+      color: var(--ink);
+      padding: 0;
+      text-align: left;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    }
+
+    .tile img,
+    .tile .placeholder,
+    .detailFrame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .rotate180 {
+      transform: rotate(180deg);
+    }
+
+    .placeholder {
+      display: grid;
+      place-items: end start;
+      padding: 12px;
+      background:
+        linear-gradient(180deg, rgba(2, 8, 6, 0.04), rgba(2, 8, 6, 0.68)),
+        linear-gradient(135deg, #7491a0 0%, #d7dfcf 46%, #283f32 47%, #19281f 100%);
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .tile::after,
+    .detailFrame::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.1) 40%, rgba(0, 0, 0, 0.66));
+      pointer-events: none;
+    }
+
+    .brandMark {
+      position: absolute;
+      right: 7px;
+      bottom: 6px;
+      z-index: 2;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 900;
+      text-shadow: 0 1px 5px rgba(0, 0, 0, 0.8);
+    }
+
+    .status {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      z-index: 2;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #8cff9a;
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.28);
+    }
+
+    .status.warn {
+      background: var(--warn);
+    }
+
+    .tileText {
+      position: absolute;
+      left: 8px;
+      right: 58px;
+      bottom: 7px;
+      z-index: 2;
+      display: grid;
+    }
+
+    .tileText strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      line-height: 1.05;
+    }
+
+    .tileText span,
+    .tileAction {
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .tileAction {
+      position: absolute;
+      right: 7px;
+      top: 7px;
+      z-index: 2;
+      max-width: calc(100% - 28px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 3px 6px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(4px);
+    }
+
+    .homeNav,
+    .detailNav {
+      height: calc(env(safe-area-inset-bottom) + 86px);
+      padding: 8px 20px calc(env(safe-area-inset-bottom) + 10px);
+      display: grid;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      border-top: 1px solid var(--line);
+      background: rgba(17, 23, 19, 0.96);
+    }
+
+    .homeNav {
+      grid-row: 4;
+      grid-template-columns: repeat(3, 64px);
+    }
+
+    .detailNav {
+      grid-template-columns: 64px;
+    }
+
+    .detailNav.hasControl {
+      grid-template-columns: repeat(2, 72px);
+    }
+
+    .navButton {
+      width: 64px;
+      height: 64px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .detailNav.hasControl .navButton {
+      width: 72px;
+    }
+
+    .panelScreen,
+    .detailScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      width: 100%;
+      max-width: 430px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      background: var(--bg);
+      transform: translateY(100%);
+      transition: transform 180ms ease;
+    }
+
+    .panelScreen[aria-hidden="false"],
+    .detailScreen[aria-hidden="false"] {
+      transform: translateY(0);
+    }
+
+    .detailTop {
+      height: calc(env(safe-area-inset-top) + 68px);
+      padding: calc(env(safe-area-inset-top) + 10px) 14px 9px;
+      display: grid;
+      align-content: end;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .detailStage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .detailFrame {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(50svh - env(safe-area-inset-top) - 68px);
+      transform: translateY(-50%);
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      background: #000;
+      transition: top 180ms ease;
+    }
+
+    .detailScreen.aiming .detailFrame {
+      top: calc(35svh - env(safe-area-inset-top) - 68px);
+    }
+
+    .detailInfo {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: calc(50svh - env(safe-area-inset-top) - 68px + 30vw);
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--panel);
+    }
+
+    .detailInfo h2 {
+      font-size: 18px;
+    }
+
+    .detailInfo dl,
+    .motionList {
+      margin: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .detailInfo dl {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .detailInfo dt,
+    .motionCard span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .detailInfo dd {
+      margin: 2px 0 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .controlPanel {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: calc(35svh - env(safe-area-inset-top) - 68px + 30vw);
+      z-index: 3;
+      display: none;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(25, 33, 27, 0.96);
+    }
+
+    .controlPanel[aria-hidden="false"] {
+      display: grid;
+    }
+
+    .controlCopy {
+      display: grid;
+      gap: 4px;
+      align-self: start;
+    }
+
+    .controlCopy strong {
+      font-size: 18px;
+    }
+
+    .controlCopy span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .controlsPad {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 10px;
+      justify-content: end;
+      align-items: center;
+    }
+
+    .ptzPad {
+      display: grid;
+      grid-template-columns: repeat(3, 48px);
+      grid-template-rows: repeat(3, 48px);
+      gap: 5px;
+    }
+
+    .controlButton {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--ink);
+      font-size: 18px;
+      font-weight: 900;
+      user-select: none;
+    }
+
+    .controlButton:active {
+      background: var(--ink);
+      color: #111713;
+    }
+
+    .up { grid-column: 2; }
+    .left { grid-column: 1; grid-row: 2; }
+    .right { grid-column: 3; grid-row: 2; }
+    .down { grid-column: 2; grid-row: 3; }
+
+    .ptzCenter {
+      grid-column: 2;
+      grid-row: 2;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .zoomStack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .zoomStack .controlButton {
+      width: 112px;
+      height: 52px;
+      font-size: 11px;
+    }
+
+    .zoomOnly .ptzPad {
+      display: none;
+    }
+
+    .ptzOnly .homebaseButton {
+      display: none;
+    }
+
+    .panelBody {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 12px 100px;
+    }
+
+    .motionCard {
+      min-height: 104px;
+      display: grid;
+      align-content: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--panel);
+    }
+
+    .motionCard strong {
+      font-size: 16px;
+    }
+
+    .motionCard p {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    @media (min-width: 640px) {
+      .detailInfo {
+        top: calc(50svh - env(safe-area-inset-top) - 68px + 132px);
+      }
+
+      .controlPanel {
+        top: calc(35svh - env(safe-area-inset-top) - 68px + 132px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TopHand</p>
+        <h1>RanchView</h1>
+      </div>
+      <div class="sync" id="syncState">Threadgill</div>
+    </header>
+
+    <nav class="filters" aria-label="Camera filters">
+      <button class="filter active" type="button" data-filter="all">All</button>
+      <button class="filter" type="button" data-filter="house">House</button>
+      <button class="filter" type="button" data-filter="trail">Trail</button>
+      <button class="filter" type="button" data-filter="alerts">Alerts</button>
+    </nav>
+
+    <main class="grid" id="cameraGrid" aria-live="polite"></main>
+
+    <nav class="homeNav" aria-label="Main navigation">
+      <button class="navButton active" id="homeTab" type="button">Home</button>
+      <button class="navButton" id="clipsTab" type="button">Clips</button>
+      <button class="navButton" id="moreTab" type="button">More</button>
+    </nav>
+  </div>
+
+  <section class="detailScreen" id="detailScreen" aria-hidden="true">
+    <header class="detailTop">
+      <p class="eyebrow">TopHand</p>
+      <h1>RanchView</h1>
+    </header>
+    <main class="detailStage">
+      <div class="detailFrame" id="detailFrame"></div>
+      <section class="detailInfo" id="detailInfo"></section>
+      <section class="controlPanel" id="controlPanel" aria-hidden="true">
+        <div class="controlCopy">
+          <strong id="controlTitle">Aim Cam</strong>
+          <span id="controlStatus">Bridge not connected</span>
+        </div>
+        <div class="controlsPad" aria-label="Camera controls">
+          <div class="ptzPad">
+            <button class="controlButton up" type="button" data-control="up" aria-label="Tilt up">↑</button>
+            <button class="controlButton left" type="button" data-control="left" aria-label="Pan left">←</button>
+            <span class="ptzCenter">+</span>
+            <button class="controlButton right" type="button" data-control="right" aria-label="Pan right">→</button>
+            <button class="controlButton down" type="button" data-control="down" aria-label="Tilt down">↓</button>
+          </div>
+          <div class="zoomStack">
+            <button class="controlButton" type="button" data-control="zoom_in">Zoom In</button>
+            <button class="controlButton" type="button" data-control="zoom_out">Zoom Out</button>
+            <button class="controlButton homebaseButton" type="button" data-control="homebase">Homebase</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <nav class="detailNav" id="detailNav" aria-label="Camera navigation">
+      <button class="navButton active" id="detailHome" type="button">Home</button>
+      <button class="navButton" id="controlToggle" type="button" hidden>Aim Cam</button>
+    </nav>
+  </section>
+
+  <section class="panelScreen" id="clipsScreen" aria-hidden="true">
+    <header class="detailTop">
+      <p class="eyebrow">TopHand</p>
+      <h1>RanchView</h1>
+    </header>
+    <main class="panelBody">
+      <section class="motionList">
+        <article class="motionCard">
+          <span>Retention</span>
+          <strong>Motion recordings are the recovery layer.</strong>
+          <p>Event clips are not enough by themselves. Threadgill should keep a motion recording window, then promote important motion to clips after review.</p>
+        </article>
+        <article class="motionCard">
+          <span>Bridge</span>
+          <strong>Live clips need the HTTPS edge API.</strong>
+          <p>This remote page is ready for a public TopHand bridge. It does not expose private RTSP, ONVIF, Frigate, or camera credentials.</p>
+        </article>
+      </section>
+    </main>
+    <nav class="detailNav" aria-label="Clips navigation">
+      <button class="navButton active" id="clipsHome" type="button">Home</button>
+    </nav>
+  </section>
+
+  <section class="panelScreen" id="moreScreen" aria-hidden="true">
+    <header class="detailTop">
+      <p class="eyebrow">TopHand</p>
+      <h1>RanchView</h1>
+    </header>
+    <main class="panelBody">
+      <section class="motionList">
+        <article class="motionCard">
+          <span>Site</span>
+          <strong>Mark Threadgill</strong>
+          <p>Four house cameras are staged now: two Amcrest optical zoom cameras, one fixed Amcrest dome, and one Anpviz/Hikvision PTZ.</p>
+        </article>
+        <article class="motionCard">
+          <span>Network</span>
+          <strong>No vendor cloud path.</strong>
+          <p>Camera traffic belongs on the local TopHand edge stack, then to controlled TopHand storage and analysis services.</p>
+        </article>
+      </section>
+    </main>
+    <nav class="detailNav" aria-label="Settings navigation">
+      <button class="navButton active" id="moreHome" type="button">Home</button>
+    </nav>
+  </section>
+
+  <script>
+    const apiBase = (() => {
+      const params = new URLSearchParams(window.location.search);
+      const queryApi = params.get("api");
+      if (queryApi) {
+        window.localStorage.setItem("threadgillApiBase", queryApi.replace(/\/$/, ""));
+        return queryApi.replace(/\/$/, "");
+      }
+      return (window.localStorage.getItem("threadgillApiBase") || "").replace(/\/$/, "");
+    })();
+
+    const cameras = [
+      {
+        id: "amcrest-mt2544ew-01",
+        name: "Zoom Cam 120",
+        zone: "Ranch House",
+        kind: "house",
+        type: "Zoom",
+        sample: "/threadgill-assets/zoom-cam-120.webp",
+        ptz: false,
+        zoom: true,
+        rotation: 180
+      },
+      {
+        id: "amcrest-mt2544ew-02",
+        name: "Zoom Cam 121",
+        zone: "Ranch House",
+        kind: "house",
+        type: "Zoom",
+        sample: "/threadgill-assets/zoom-cam-121.webp",
+        ptz: false,
+        zoom: true,
+        rotation: 180
+      },
+      {
+        id: "amcrest-2493e-03",
+        name: "Fixed Dome 122",
+        zone: "Ranch House",
+        kind: "house",
+        type: "Fixed",
+        sample: "/threadgill-assets/fixed-dome-122.webp",
+        ptz: false,
+        zoom: false,
+        rotation: 180
+      },
+      {
+        id: "anpviz-ptz-06",
+        name: "PTZ Cam 175",
+        zone: "Ranch House",
+        kind: "house",
+        type: "PTZ",
+        sample: "/threadgill-assets/ptz-cam-175.webp",
+        ptz: true,
+        zoom: true,
+        rotation: 180
+      },
+      {
+        id: "trail-gate",
+        name: "Gate",
+        zone: "Trail",
+        kind: "trail",
+        type: "Latest",
+        sample: "",
+        ptz: false,
+        zoom: false,
+        rotation: 0
+      },
+      {
+        id: "trail-water",
+        name: "Water",
+        zone: "Trail",
+        kind: "trail",
+        type: "Latest",
+        sample: "",
+        ptz: false,
+        zoom: false,
+        rotation: 0
+      }
+    ];
+
+    let filter = "all";
+    let selected = null;
+    let refreshTimer = null;
+    let controlOpen = false;
+
+    const grid = document.querySelector("#cameraGrid");
+    const syncState = document.querySelector("#syncState");
+    const detailScreen = document.querySelector("#detailScreen");
+    const detailFrame = document.querySelector("#detailFrame");
+    const detailInfo = document.querySelector("#detailInfo");
+    const detailNav = document.querySelector("#detailNav");
+    const controlToggle = document.querySelector("#controlToggle");
+    const controlPanel = document.querySelector("#controlPanel");
+    const controlTitle = document.querySelector("#controlTitle");
+    const controlStatus = document.querySelector("#controlStatus");
+    const clipsScreen = document.querySelector("#clipsScreen");
+    const moreScreen = document.querySelector("#moreScreen");
+
+    function imageSrc(camera, detail = false) {
+      if (apiBase && camera.kind === "house") {
+        const suffix = detail ? "?view=detail" : "";
+        return `${apiBase}/api/snapshot/${encodeURIComponent(camera.id)}.jpg${suffix}`;
+      }
+      return camera.sample;
+    }
+
+    function cacheBust(url) {
+      if (!url) return "";
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}v=${Date.now()}`;
+    }
+
+    function rotationClass(camera) {
+      return Number(camera.rotation) === 180 ? "rotate180" : "";
+    }
+
+    function statusText(camera) {
+      if (apiBase && camera.kind === "house") return "Live";
+      if (camera.kind === "trail") return "Pending";
+      return "Sample";
+    }
+
+    function visibleCameras() {
+      return cameras.filter((camera) => {
+        if (filter === "all") return true;
+        if (filter === "alerts") return camera.kind === "house";
+        return camera.kind === filter;
+      });
+    }
+
+    function renderGrid() {
+      grid.innerHTML = "";
+      syncState.textContent = apiBase ? "Bridge" : "Preview";
+      for (const camera of visibleCameras()) {
+        const tile = document.createElement("button");
+        tile.className = `tile ${camera.kind}`;
+        tile.type = "button";
+        const src = imageSrc(camera);
+        const media = src
+          ? `<img class="${rotationClass(camera)}" src="${cacheBust(src)}" alt="${camera.name}" loading="eager">`
+          : `<div class="placeholder">${camera.zone}</div>`;
+        tile.innerHTML = `
+          ${media}
+          <span class="brandMark">RanchView</span>
+          <span class="status ${apiBase || camera.sample ? "" : "warn"}"></span>
+          <span class="tileText">
+            <strong>${camera.name}</strong>
+            <span>${camera.zone}</span>
+          </span>
+          <span class="tileAction">${statusText(camera)}</span>
+        `;
+        tile.addEventListener("click", () => openDetail(camera.id));
+        grid.appendChild(tile);
+      }
+    }
+
+    function openDetail(id) {
+      selected = cameras.find((camera) => camera.id === id);
+      if (!selected) return;
+      closePanels();
+      closeControl();
+      const src = imageSrc(selected, true);
+      const media = src
+        ? `<img id="detailImage" class="${rotationClass(selected)}" src="${cacheBust(src)}" alt="${selected.name}">`
+        : `<div class="placeholder">${selected.zone}</div>`;
+      detailFrame.innerHTML = `${media}<span class="brandMark">RanchView</span>`;
+      detailInfo.innerHTML = `
+        <h2>${selected.name}</h2>
+        <dl>
+          <div><dt>Zone</dt><dd>${selected.zone}</dd></div>
+          <div><dt>Source</dt><dd>${selected.type}</dd></div>
+          <div><dt>Status</dt><dd>${statusText(selected)}</dd></div>
+        </dl>
+      `;
+      const hasControl = selected.ptz || selected.zoom;
+      detailNav.classList.toggle("hasControl", hasControl);
+      controlToggle.hidden = !hasControl;
+      controlToggle.textContent = selected.ptz ? "Aim Cam" : "Zoom Cam";
+      detailScreen.setAttribute("aria-hidden", "false");
+
+      window.clearInterval(refreshTimer);
+      if (apiBase && selected.kind === "house") {
+        refreshTimer = window.setInterval(() => {
+          const img = document.querySelector("#detailImage");
+          if (img) img.src = cacheBust(src);
+        }, 1400);
+      }
+    }
+
+    function closeDetail() {
+      window.clearInterval(refreshTimer);
+      refreshTimer = null;
+      selected = null;
+      closeControl();
+      detailScreen.setAttribute("aria-hidden", "true");
+    }
+
+    function closePanels() {
+      clipsScreen.setAttribute("aria-hidden", "true");
+      moreScreen.setAttribute("aria-hidden", "true");
+    }
+
+    function closeControl() {
+      controlOpen = false;
+      detailScreen.classList.remove("aiming");
+      controlPanel.setAttribute("aria-hidden", "true");
+      controlPanel.classList.remove("zoomOnly", "ptzOnly");
+    }
+
+    function toggleControl() {
+      if (!selected || (!selected.ptz && !selected.zoom)) return;
+      controlOpen = !controlOpen;
+      detailScreen.classList.toggle("aiming", controlOpen);
+      controlPanel.setAttribute("aria-hidden", controlOpen ? "false" : "true");
+      controlPanel.classList.toggle("zoomOnly", selected.zoom && !selected.ptz);
+      controlPanel.classList.toggle("ptzOnly", selected.ptz);
+      controlTitle.textContent = selected.ptz ? "Aim Cam" : "Zoom Cam";
+      controlToggle.textContent = controlOpen ? (selected.ptz ? "Close Aim" : "Close Zoom") : (selected.ptz ? "Aim Cam" : "Zoom Cam");
+      controlStatus.textContent = apiBase ? "Ready" : "Bridge not connected";
+    }
+
+    async function sendControl(action) {
+      if (!selected) return;
+      if (!apiBase) {
+        controlStatus.textContent = "Bridge not connected";
+        return;
+      }
+      controlStatus.textContent = action.replace("_", " ");
+      try {
+        await fetch(`${apiBase}/api/control/${encodeURIComponent(selected.id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, duration_ms: action === "homebase" ? 2300 : 220 })
+        });
+        controlStatus.textContent = "Ready";
+      } catch {
+        controlStatus.textContent = "Control unavailable";
+      }
+    }
+
+    document.querySelectorAll(".filter").forEach((button) => {
+      button.addEventListener("click", () => {
+        filter = button.dataset.filter;
+        document.querySelectorAll(".filter").forEach((item) => item.classList.toggle("active", item === button));
+        renderGrid();
+      });
+    });
+
+    document.querySelector("#homeTab").addEventListener("click", () => {
+      closeDetail();
+      closePanels();
+    });
+    document.querySelector("#clipsTab").addEventListener("click", () => {
+      closeDetail();
+      moreScreen.setAttribute("aria-hidden", "true");
+      clipsScreen.setAttribute("aria-hidden", "false");
+    });
+    document.querySelector("#moreTab").addEventListener("click", () => {
+      closeDetail();
+      clipsScreen.setAttribute("aria-hidden", "true");
+      moreScreen.setAttribute("aria-hidden", "false");
+    });
+    document.querySelector("#detailHome").addEventListener("click", closeDetail);
+    document.querySelector("#clipsHome").addEventListener("click", closePanels);
+    document.querySelector("#moreHome").addEventListener("click", closePanels);
+    controlToggle.addEventListener("click", toggleControl);
+    document.querySelectorAll("[data-control]").forEach((button) => {
+      button.addEventListener("click", () => sendControl(button.dataset.control));
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeDetail();
+        closePanels();
+      }
+    });
+
+    renderGrid();
+  </script>
+</body>
+</html>

@@ -4,9 +4,21 @@
     {
       "src": "spypoint-viewer.html",
       "use": "@vercel/static"
+    },
+    {
+      "src": "threadgill.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "threadgill-assets/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "/threadgill/?",
+      "dest": "/threadgill.html"
+    },
     {
       "src": "/tophand/?",
       "dest": "/spypoint-viewer.html"
