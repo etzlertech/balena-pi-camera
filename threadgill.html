@@ -571,6 +571,156 @@
       line-height: 1.3;
     }
 
+    .settingsShell {
+      display: grid;
+      gap: 10px;
+    }
+
+    .settingsCopy {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+
+    .settingsCameraRow,
+    .settingsModeRow {
+      display: grid;
+      gap: 8px;
+    }
+
+    .settingsCameraRow {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .settingsModeRow {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .settingsCameraButton,
+    .settingsModeButton {
+      min-width: 0;
+      height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .settingsCameraButton.active,
+    .settingsModeButton.active {
+      background: var(--ink);
+      color: #111713;
+    }
+
+    .settingsCameraButton span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.1;
+    }
+
+    .settingsModeButton {
+      height: 54px;
+      text-transform: uppercase;
+    }
+
+    .settingsPreviewFrame {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #000;
+    }
+
+    .settingsPreviewFrame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
+
+    .settingsTileGrid {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: repeat(16, minmax(0, 1fr));
+      grid-template-rows: repeat(9, minmax(0, 1fr));
+    }
+
+    .settingsTile {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 0;
+    }
+
+    .settingsTile.masked {
+      background: rgba(193, 91, 58, 0.38);
+    }
+
+    .settingsTile.zoned {
+      background: rgba(201, 223, 122, 0.2);
+      box-shadow: inset 0 0 0 2px rgba(201, 223, 122, 0.92);
+    }
+
+    .settingsTile.masked.zoned {
+      background: linear-gradient(135deg, rgba(193, 91, 58, 0.48) 0 50%, rgba(201, 223, 122, 0.34) 50% 100%);
+    }
+
+    .settingsStatus {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .settingsStat {
+      min-height: 54px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: var(--panel);
+    }
+
+    .settingsStat span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .settingsStat strong {
+      font-size: 15px;
+      line-height: 1.1;
+    }
+
+    .settingsConfig {
+      max-height: 190px;
+      overflow: auto;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #0d130f;
+      color: #dfe8d9;
+      font-size: 10px;
+      font-weight: 750;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+
     .captureFeed {
       min-height: 0;
       overflow-y: auto;
@@ -740,7 +890,7 @@
     <nav class="homeNav" aria-label="Main navigation">
       <button class="navButton active" id="homeTab" type="button">Home</button>
       <button class="navButton" id="clipsTab" type="button">Clips</button>
-      <button class="navButton" id="moreTab" type="button">More</button>
+      <button class="navButton" id="moreTab" type="button">Settings</button>
     </nav>
   </div>
 
@@ -839,17 +989,35 @@
       <h1>RanchView</h1>
     </header>
     <main class="panelBody">
-      <section class="motionList">
+      <section class="settingsShell" aria-label="Camera settings">
         <article class="motionCard">
-          <span>Site</span>
-          <strong>Mark Threadgill</strong>
-          <p>Four house cameras are staged now: two Amcrest optical zoom cameras, one fixed Amcrest dome, and one Anpviz/Hikvision PTZ.</p>
+          <span>Camera Settings</span>
+          <strong>Motion masks and alert zones</strong>
+          <p>Tap tiles to draft Frigate config. Masks exclude nuisance motion. Zones control which detected objects become alerts, snapshots, and reports.</p>
         </article>
-        <article class="motionCard">
-          <span>Network</span>
-          <strong>No vendor cloud path.</strong>
-          <p>Camera traffic belongs on the local TopHand edge stack, then to controlled TopHand storage and analysis services.</p>
-        </article>
+        <div class="settingsCameraRow" id="settingsCameraRow" aria-label="House camera selection"></div>
+        <div class="settingsModeRow" aria-label="Settings mode">
+          <button class="settingsModeButton active" id="settingsMaskMode" type="button">Mask</button>
+          <button class="settingsModeButton" id="settingsZoneMode" type="button">Zone</button>
+          <button class="settingsModeButton active" id="settingsDebugMode" type="button">Debug</button>
+        </div>
+        <p class="settingsCopy" id="settingsHelp">Mask tiles should cover trees, grass, sky, timestamps, or other movement that should not start recordings.</p>
+        <div class="settingsPreviewFrame">
+          <img id="settingsPreview" alt="Camera settings preview">
+          <div class="settingsTileGrid" id="settingsTileGrid" aria-label="Motion mask and zone tile grid"></div>
+          <span class="brandMark">RanchView</span>
+        </div>
+        <div class="settingsStatus" aria-live="polite">
+          <div class="settingsStat">
+            <span>Mask Tiles</span>
+            <strong id="settingsMaskCount">0 selected</strong>
+          </div>
+          <div class="settingsStat">
+            <span>Zone Tiles</span>
+            <strong id="settingsZoneCount">0 selected</strong>
+          </div>
+        </div>
+        <pre class="settingsConfig" id="settingsConfig">Select a camera to draft config.</pre>
       </section>
     </main>
     <nav class="detailNav" aria-label="Settings navigation">
@@ -876,6 +1044,9 @@
     const CONTROL_PROXY = "/api/threadgill/control";
     const THUMB_CACHE_NAME = "threadgill-home-thumbs-v1";
     const THUMB_REFRESH_MS = 15000;
+    const SETTINGS_COLS = 16;
+    const SETTINGS_ROWS = 9;
+    const SETTINGS_DRAFT_KEY = "threadgill-frigate-settings-draft-v1";
 
     const cameras = [
       {
@@ -963,6 +1134,11 @@
     let refreshTimer = null;
     let detailPreload = null;
     let controlOpen = false;
+    let settingsCameraId = "amcrest-mt2544ew-01";
+    let settingsMode = "mask";
+    let settingsDebug = true;
+    let settingsPreviewTimer = null;
+    const settingsDraft = loadSettingsDraft();
     const refreshingThumbs = new Map();
     const detailZoom = {
       scale: 1,
@@ -992,6 +1168,16 @@
     const clipPlayerInfo = document.querySelector("#clipPlayerInfo");
     const clipsScreen = document.querySelector("#clipsScreen");
     const moreScreen = document.querySelector("#moreScreen");
+    const settingsCameraRow = document.querySelector("#settingsCameraRow");
+    const settingsMaskMode = document.querySelector("#settingsMaskMode");
+    const settingsZoneMode = document.querySelector("#settingsZoneMode");
+    const settingsDebugMode = document.querySelector("#settingsDebugMode");
+    const settingsHelp = document.querySelector("#settingsHelp");
+    const settingsPreview = document.querySelector("#settingsPreview");
+    const settingsTileGrid = document.querySelector("#settingsTileGrid");
+    const settingsMaskCount = document.querySelector("#settingsMaskCount");
+    const settingsZoneCount = document.querySelector("#settingsZoneCount");
+    const settingsConfig = document.querySelector("#settingsConfig");
 
     function frigateUrl(path, params = {}) {
       const query = new URLSearchParams({ path });
@@ -1401,6 +1587,303 @@
       });
     }
 
+    function loadSettingsDraft() {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(SETTINGS_DRAFT_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function saveSettingsDraft() {
+      try {
+        window.localStorage.setItem(SETTINGS_DRAFT_KEY, JSON.stringify(settingsDraft));
+      } catch {
+        // The UI can still draft config in memory if private browsing blocks storage.
+      }
+    }
+
+    function houseCameras() {
+      return cameras.filter((camera) => camera.kind === "house" && camera.frigateCamera);
+    }
+
+    function settingsCamera() {
+      const options = houseCameras();
+      let camera = options.find((item) => item.id === settingsCameraId) || options[0];
+      if (camera) settingsCameraId = camera.id;
+      return camera;
+    }
+
+    function draftForCamera(id) {
+      if (!settingsDraft[id]) settingsDraft[id] = {};
+      if (!Array.isArray(settingsDraft[id].mask)) settingsDraft[id].mask = [];
+      if (!Array.isArray(settingsDraft[id].zone)) settingsDraft[id].zone = [];
+      return settingsDraft[id];
+    }
+
+    function tileKey(x, y) {
+      return `${x}:${y}`;
+    }
+
+    function displayTileKey(camera, x, y) {
+      if (Number(camera.rotation) === 180) {
+        return tileKey(SETTINGS_COLS - 1 - x, SETTINGS_ROWS - 1 - y);
+      }
+      return tileKey(x, y);
+    }
+
+    function parseTileKey(key) {
+      const [x, y] = String(key).split(":").map(Number);
+      return { x, y };
+    }
+
+    function sortTileKeys(a, b) {
+      const left = parseTileKey(a);
+      const right = parseTileKey(b);
+      return left.y - right.y || left.x - right.x;
+    }
+
+    function settingsTileSets(camera) {
+      const draft = draftForCamera(camera.id);
+      return {
+        mask: new Set(draft.mask),
+        zone: new Set(draft.zone)
+      };
+    }
+
+    function renderSettingsCameraButtons() {
+      if (!settingsCameraRow) return;
+      settingsCameraRow.innerHTML = "";
+      for (const camera of houseCameras()) {
+        const button = document.createElement("button");
+        button.className = `settingsCameraButton ${camera.id === settingsCameraId ? "active" : ""}`;
+        button.type = "button";
+        button.innerHTML = `<span>${camera.name}</span>`;
+        button.addEventListener("click", () => {
+          settingsCameraId = camera.id;
+          renderSettings();
+          startSettingsPreview();
+        });
+        settingsCameraRow.appendChild(button);
+      }
+    }
+
+    function renderSettingsTiles() {
+      const camera = settingsCamera();
+      if (!camera || !settingsTileGrid) return;
+      const sets = settingsTileSets(camera);
+      settingsTileGrid.innerHTML = "";
+      for (let y = 0; y < SETTINGS_ROWS; y += 1) {
+        for (let x = 0; x < SETTINGS_COLS; x += 1) {
+          const key = displayTileKey(camera, x, y);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = [
+            "settingsTile",
+            sets.mask.has(key) ? "masked" : "",
+            sets.zone.has(key) ? "zoned" : ""
+          ].filter(Boolean).join(" ");
+          button.setAttribute("aria-label", `Tile ${x + 1}, ${y + 1}`);
+          button.addEventListener("click", () => toggleSettingsTile(key));
+          settingsTileGrid.appendChild(button);
+        }
+      }
+    }
+
+    function toggleSettingsTile(key) {
+      const camera = settingsCamera();
+      if (!camera) return;
+      const draft = draftForCamera(camera.id);
+      const list = draft[settingsMode];
+      const set = new Set(list);
+      if (set.has(key)) {
+        set.delete(key);
+      } else {
+        set.add(key);
+      }
+      draft[settingsMode] = [...set].sort(sortTileKeys);
+      saveSettingsDraft();
+      renderSettingsTiles();
+      renderSettingsConfig();
+    }
+
+    function tileSetToRects(keys) {
+      const keySet = new Set(keys);
+      const rects = [];
+      let active = new Map();
+
+      for (let y = 0; y < SETTINGS_ROWS; y += 1) {
+        const xs = [];
+        for (let x = 0; x < SETTINGS_COLS; x += 1) {
+          if (keySet.has(tileKey(x, y))) xs.push(x);
+        }
+
+        const runs = [];
+        for (let index = 0; index < xs.length; index += 1) {
+          const start = xs[index];
+          let end = start + 1;
+          while (index + 1 < xs.length && xs[index + 1] === end) {
+            end += 1;
+            index += 1;
+          }
+          runs.push({ x1: start, x2: end });
+        }
+
+        const nextActive = new Map();
+        for (const run of runs) {
+          const runKey = `${run.x1}:${run.x2}`;
+          const existing = active.get(runKey);
+          if (existing) {
+            existing.y2 = y + 1;
+            nextActive.set(runKey, existing);
+          } else {
+            nextActive.set(runKey, { x1: run.x1, x2: run.x2, y1: y, y2: y + 1 });
+          }
+        }
+
+        for (const [runKey, rect] of active.entries()) {
+          if (!nextActive.has(runKey)) rects.push(rect);
+        }
+        active = nextActive;
+      }
+
+      for (const rect of active.values()) rects.push(rect);
+      return rects;
+    }
+
+    function normalized(value) {
+      return Number(value.toFixed(4)).toString();
+    }
+
+    function rectToPolygon(rect) {
+      const points = [
+        rect.x1 / SETTINGS_COLS,
+        rect.y1 / SETTINGS_ROWS,
+        rect.x2 / SETTINGS_COLS,
+        rect.y1 / SETTINGS_ROWS,
+        rect.x2 / SETTINGS_COLS,
+        rect.y2 / SETTINGS_ROWS,
+        rect.x1 / SETTINGS_COLS,
+        rect.y2 / SETTINGS_ROWS
+      ];
+      return points.map(normalized).join(",");
+    }
+
+    function settingsPreviewSrc(camera) {
+      if (!camera?.frigateCamera) return "";
+      const params = settingsDebug ? { motion: 1, bbox: 1, regions: 1 } : {};
+      return cacheBust(frigateUrl(`/api/${camera.frigateCamera}/latest.jpg`, params));
+    }
+
+    function refreshSettingsPreview() {
+      const camera = settingsCamera();
+      if (!camera || !settingsPreview) return;
+      const src = settingsPreviewSrc(camera);
+      if (!src) return;
+      settingsPreview.className = rotationClass(camera);
+      settingsPreview.src = src;
+      settingsPreview.alt = `${camera.name} settings preview`;
+    }
+
+    function startSettingsPreview() {
+      stopSettingsPreview();
+      refreshSettingsPreview();
+      settingsPreviewTimer = window.setInterval(refreshSettingsPreview, 2200);
+    }
+
+    function stopSettingsPreview() {
+      window.clearInterval(settingsPreviewTimer);
+      settingsPreviewTimer = null;
+    }
+
+    function buildSettingsConfig(camera) {
+      if (!camera) return "No house camera selected.";
+      const draft = draftForCamera(camera.id);
+      const maskPolygons = tileSetToRects(draft.mask).map(rectToPolygon);
+      const zonePolygons = tileSetToRects(draft.zone).map(rectToPolygon);
+      const lines = [
+        "# Draft only. Apply through the authenticated TopHand bridge.",
+        "# Keep broad motion recording enabled; use masks only for nuisance movement.",
+        "# The editor honors display rotation; coordinates below remain Frigate-native.",
+        "cameras:",
+        `  ${camera.frigateCamera}:`,
+        "    motion:"
+      ];
+
+      if (maskPolygons.length) {
+        lines.push("      mask:");
+        for (const polygon of maskPolygons) lines.push(`        - "${polygon}"`);
+      } else {
+        lines.push("      mask: []");
+      }
+
+      if (zonePolygons.length) {
+        lines.push("    zones:");
+        zonePolygons.forEach((polygon, index) => {
+          const name = `activity_${index + 1}`;
+          lines.push(`      ${name}:`);
+          lines.push(`        coordinates: "${polygon}"`);
+          lines.push("        objects:");
+          lines.push("          - person");
+          lines.push("          - car");
+          lines.push("          - dog");
+        });
+        lines.push("    review:");
+        lines.push("      alerts:");
+        lines.push("        required_zones:");
+        zonePolygons.forEach((_, index) => lines.push(`          - activity_${index + 1}`));
+        lines.push("      detections:");
+        lines.push("        required_zones:");
+        zonePolygons.forEach((_, index) => lines.push(`          - activity_${index + 1}`));
+        lines.push("    snapshots:");
+        lines.push("      required_zones:");
+        zonePolygons.forEach((_, index) => lines.push(`        - activity_${index + 1}`));
+      } else {
+        lines.push("    zones: {}");
+        lines.push("    # Add zone tiles when this camera should promote detections to alerts.");
+      }
+
+      return lines.join("\n");
+    }
+
+    function renderSettingsConfig() {
+      const camera = settingsCamera();
+      if (!camera) return;
+      const draft = draftForCamera(camera.id);
+      const maskCount = draft.mask.length;
+      const zoneCount = draft.zone.length;
+      if (settingsMaskCount) settingsMaskCount.textContent = `${maskCount} selected`;
+      if (settingsZoneCount) settingsZoneCount.textContent = `${zoneCount} selected`;
+      if (settingsConfig) settingsConfig.textContent = buildSettingsConfig(camera);
+    }
+
+    function renderSettings() {
+      const camera = settingsCamera();
+      if (!camera) return;
+      renderSettingsCameraButtons();
+      settingsMaskMode?.classList.toggle("active", settingsMode === "mask");
+      settingsZoneMode?.classList.toggle("active", settingsMode === "zone");
+      settingsDebugMode?.classList.toggle("active", settingsDebug);
+      if (settingsHelp) {
+        settingsHelp.textContent = settingsMode === "mask"
+          ? "Mask tiles should cover trees, grass, sky, timestamps, or other movement that should not start recordings."
+          : "Zone tiles mark where person, car, and dog detections should become alerts, snapshots, and reports.";
+      }
+      renderSettingsTiles();
+      renderSettingsConfig();
+      refreshSettingsPreview();
+    }
+
+    function openSettingsPanel() {
+      closeDetail();
+      closeClipPlayer();
+      clipsScreen.setAttribute("aria-hidden", "true");
+      moreScreen.setAttribute("aria-hidden", "false");
+      renderSettings();
+      startSettingsPreview();
+    }
+
     function renderGrid() {
       grid.innerHTML = "";
       syncState.textContent = apiBase ? "Bridge" : "Preview";
@@ -1598,6 +2081,7 @@
 
     function closePanels() {
       closeClipPlayer();
+      stopSettingsPreview();
       clipsScreen.setAttribute("aria-hidden", "true");
       moreScreen.setAttribute("aria-hidden", "true");
     }
@@ -1651,17 +2135,27 @@
     });
     document.querySelector("#clipsTab").addEventListener("click", () => {
       closeDetail();
+      stopSettingsPreview();
       moreScreen.setAttribute("aria-hidden", "true");
       clipsScreen.setAttribute("aria-hidden", "false");
     });
-    document.querySelector("#moreTab").addEventListener("click", () => {
-      closeDetail();
-      clipsScreen.setAttribute("aria-hidden", "true");
-      moreScreen.setAttribute("aria-hidden", "false");
-    });
+    document.querySelector("#moreTab").addEventListener("click", openSettingsPanel);
     document.querySelector("#detailHome").addEventListener("click", closeDetail);
     document.querySelector("#clipsHome").addEventListener("click", closePanels);
     document.querySelector("#moreHome").addEventListener("click", closePanels);
+    settingsMaskMode.addEventListener("click", () => {
+      settingsMode = "mask";
+      renderSettings();
+    });
+    settingsZoneMode.addEventListener("click", () => {
+      settingsMode = "zone";
+      renderSettings();
+    });
+    settingsDebugMode.addEventListener("click", () => {
+      settingsDebug = !settingsDebug;
+      renderSettings();
+      startSettingsPreview();
+    });
     controlToggle.addEventListener("click", toggleControl);
     detailFrame.addEventListener("touchstart", (event) => {
       if (!getDetailZoomImage()) return;
