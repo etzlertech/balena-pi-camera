@@ -1085,6 +1085,7 @@
     }
 
     function detailStartImage(camera, liveSrc) {
+      if (camera.kind === "trail") return liveSrc;
       const tileImg = document.querySelector(`img[data-camera-id="${camera.id}"]`);
       return camera.cachedThumb || tileImg?.currentSrc || tileImg?.src || liveSrc;
     }
