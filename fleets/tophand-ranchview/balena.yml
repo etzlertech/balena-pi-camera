@@ -1,0 +1,21 @@
+name: tophand-ranchview
+type: sw.application
+version: "0.2.0"
+description: >-
+  TopHand RanchView / Threadgill edge security NVR fleet.
+  Frigate + USB Coral baseline for the first Amcrest camera stream.
+
+assets:
+  repository:
+    type: blob.asset
+    data:
+      url: 'https://github.com/etzlertech/balena-pi-camera'
+
+data:
+  applicationEnvironmentVariables:
+    - SITE_SLUG: 'mark-threadgill'
+    - HELLO_PORT: '8080'
+
+  defaultDeviceType: raspberrypi5
+  supportedDeviceTypes:
+    - raspberrypi5

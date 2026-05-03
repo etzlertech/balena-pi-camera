@@ -1,0 +1,8 @@
+FROM ghcr.io/blakeblackshear/frigate:stable
+
+COPY config.yml /opt/tophand/config.yml
+COPY start-frigate.sh /usr/local/bin/start-frigate.sh
+
+RUN chmod +x /usr/local/bin/start-frigate.sh
+
+ENTRYPOINT ["/usr/local/bin/start-frigate.sh"]

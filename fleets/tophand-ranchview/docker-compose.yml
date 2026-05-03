@@ -1,0 +1,37 @@
+version: '2.1'
+
+services:
+  hello:
+    build: ./hello-service
+    restart: always
+    network_mode: host
+    labels:
+      io.balena.features.supervisor-api: '1'
+      io.balena.update.strategy: kill-then-download
+    environment:
+      - SITE_SLUG=mark-threadgill
+      - HELLO_PORT=8080
+
+  frigate:
+    build: ./frigate
+    privileged: true
+    restart: always
+    network_mode: host
+    stop_grace_period: 30s
+    shm_size: "1gb"
+    labels:
+      io.balena.features.kernel-modules: '1'
+      io.balena.features.firmware: '1'
+      io.balena.features.sysfs: '1'
+      io.balena.update.strategy: download-then-kill
+    volumes:
+      - frigate_config:/config
+      - frigate_media:/media/frigate
+      - frigate_cache:/tmp/cache
+    environment:
+      - TZ=America/Chicago
+
+volumes:
+  frigate_config:
+  frigate_media:
+  frigate_cache:

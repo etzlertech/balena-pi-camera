@@ -1,0 +1,266 @@
+mqtt:
+  enabled: false
+
+database:
+  path: /media/frigate/frigate.db
+
+detectors:
+  coral:
+    type: edgetpu
+    device: usb
+
+ffmpeg:
+  hwaccel_args: preset-rpi-64-h264
+  output_args:
+    record: preset-record-generic-audio-copy
+
+go2rtc:
+  streams:
+    amcrest_mt2544ew_01_main:
+      - "rtsp://{FRIGATE_AMCREST_MT2544EW_01_USER}:{FRIGATE_AMCREST_MT2544EW_01_PASSWORD}@192.168.1.120:554/cam/realmonitor?channel=1&subtype=0"
+    amcrest_mt2544ew_01_sub:
+      - "rtsp://{FRIGATE_AMCREST_MT2544EW_01_USER}:{FRIGATE_AMCREST_MT2544EW_01_PASSWORD}@192.168.1.120:554/cam/realmonitor?channel=1&subtype=1"
+    amcrest_mt2544ew_02_main:
+      - "rtsp://{FRIGATE_AMCREST_MT2544EW_02_USER}:{FRIGATE_AMCREST_MT2544EW_02_PASSWORD}@192.168.1.121:554/cam/realmonitor?channel=1&subtype=0"
+    amcrest_mt2544ew_02_sub:
+      - "rtsp://{FRIGATE_AMCREST_MT2544EW_02_USER}:{FRIGATE_AMCREST_MT2544EW_02_PASSWORD}@192.168.1.121:554/cam/realmonitor?channel=1&subtype=1"
+    amcrest_2493e_03_main:
+      - "rtsp://{FRIGATE_AMCREST_2493E_03_USER}:{FRIGATE_AMCREST_2493E_03_PASSWORD}@192.168.1.122:554/cam/realmonitor?channel=1&subtype=0"
+    amcrest_2493e_03_sub:
+      - "rtsp://{FRIGATE_AMCREST_2493E_03_USER}:{FRIGATE_AMCREST_2493E_03_PASSWORD}@192.168.1.122:554/cam/realmonitor?channel=1&subtype=1"
+
+record:
+  enabled: true
+  continuous:
+    days: 0
+  motion:
+    days: 1
+  alerts:
+    retain:
+      days: 7
+      mode: motion
+  detections:
+    retain:
+      days: 7
+      mode: motion
+
+snapshots:
+  enabled: true
+  timestamp: true
+  bounding_box: true
+  retain:
+    default: 14
+
+objects:
+  track:
+    - person
+    - car
+    - dog
+    - cat
+
+birdseye:
+  enabled: true
+  mode: objects
+
+cameras:
+  amcrest_mt2544ew_01:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544ew_01_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544ew_01_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: true
+      width: 704
+      height: 480
+      fps: 2
+    live:
+      streams:
+        main_stream: amcrest_mt2544ew_01_main
+        sub_stream: amcrest_mt2544ew_01_sub
+    ui:
+      order: 10
+
+  amcrest_mt2544ew_02:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544ew_02_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544ew_02_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: true
+      width: 704
+      height: 480
+      fps: 2
+    live:
+      streams:
+        main_stream: amcrest_mt2544ew_02_main
+        sub_stream: amcrest_mt2544ew_02_sub
+    ui:
+      order: 20
+
+  amcrest_2493e_03:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/amcrest_2493e_03_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/amcrest_2493e_03_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: true
+      width: 704
+      height: 480
+      fps: 2
+    live:
+      streams:
+        main_stream: amcrest_2493e_03_main
+        sub_stream: amcrest_2493e_03_sub
+    ui:
+      order: 30
+
+  amcrest_mt2544e_04:
+    enabled: false
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544e_04_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+            - detect
+    detect:
+      enabled: false
+      fps: 5
+    live:
+      streams:
+        main_stream: amcrest_mt2544e_04_main
+    ui:
+      order: 40
+
+  amcrest_mt2544e_05:
+    enabled: false
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/amcrest_mt2544e_05_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+            - detect
+    detect:
+      enabled: false
+      fps: 5
+    live:
+      streams:
+        main_stream: amcrest_mt2544e_05_main
+    ui:
+      order: 50
+
+  anpviz_ptz_06:
+    enabled: true
+    ffmpeg:
+      output_args:
+        record: preset-record-generic
+      inputs:
+        - path: "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/101"
+          input_args: preset-rtsp-generic
+          roles:
+            - record
+        - path: "rtsp://{FRIGATE_ANPVIZ_PTZ_06_USER}:{FRIGATE_ANPVIZ_PTZ_06_PASSWORD}@192.168.1.175:554/Streaming/Channels/102"
+          input_args: preset-rtsp-generic
+          roles:
+            - detect
+    detect:
+      enabled: true
+      width: 352
+      height: 240
+      fps: 2
+    ui:
+      order: 60
+
+  anpviz_ptz_07:
+    enabled: false
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_07_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_07_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: false
+      width: 352
+      height: 240
+      fps: 5
+    live:
+      streams:
+        main_stream: anpviz_ptz_07_main
+        sub_stream: anpviz_ptz_07_sub
+    ui:
+      order: 70
+
+  anpviz_ptz_08:
+    enabled: false
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_08_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/anpviz_ptz_08_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: false
+      width: 352
+      height: 240
+      fps: 5
+    live:
+      streams:
+        main_stream: anpviz_ptz_08_main
+        sub_stream: anpviz_ptz_08_sub
+    ui:
+      order: 80
+
+  hikvision_ptz_09:
+    enabled: false
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/hikvision_ptz_09_main
+          input_args: preset-rtsp-restream
+          roles:
+            - record
+        - path: rtsp://127.0.0.1:8554/hikvision_ptz_09_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: false
+      width: 352
+      height: 240
+      fps: 5
+    live:
+      streams:
+        main_stream: hikvision_ptz_09_main
+        sub_stream: hikvision_ptz_09_sub
+    ui:
+      order: 90
