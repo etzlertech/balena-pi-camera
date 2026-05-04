@@ -116,11 +116,39 @@ TopHand Frigate starting
 frigate.detectors.plugins.edgetpu_tfl INFO    : TPU found
 ```
 
+## 5070 Recording Backup
+
+The `frigate-backup` sidecar mounts `frigate_media` read-only and rsyncs Frigate recordings, clips, snapshots, exports, and a safe SQLite backup copy to the 5070 archive drive:
+
+```text
+/data/archive/threadgill/frigate-recordings/
+  media/      # Frigate media mirror
+  manifests/  # latest sidecar sync manifests
+  logs/       # reserved for server-side backup logs
+```
+
+Balena env required for the `frigate-backup` service:
+
+```powershell
+balena env set TS_AUTHKEY "<tailscale-auth-key>" --fleet gh_etzlertech/tophand-ranchview --service tailscale
+balena env set BACKUP_SSH_PRIVATE_KEY_B64 "<base64-ed25519-private-key>" --fleet gh_etzlertech/tophand-ranchview --service frigate-backup
+```
+
+Defaults:
+
+- Source: `/media/frigate`
+- Destination: `travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/media/`
+- Manifest destination: `travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/manifests/`
+- Interval: 300 seconds
+
+The backup intentionally does not use `--delete`; remote copies are preserved even if Frigate retention later removes local files. The active Frigate SQLite database is copied through `sqlite3 .backup` before rsync to avoid shipping a half-written DB file.
+
+The backup uses the 5070 Tailscale address, so the `tailscale` sidecar must be authenticated before `frigate-backup` can connect.
+
 ## Next Release
 
 After this deploy is proven:
 
-- Add Tailscale sidecar with `TS_AUTHKEY`
 - Add NVMe mount and retention volumes
 - Enable Frigate recording
 - Add remaining Amcrest cameras

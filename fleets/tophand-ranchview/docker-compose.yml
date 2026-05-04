@@ -47,7 +47,43 @@ services:
       - EDGE_CONTROL_PORT=8091
       - TOPHAND_WIFI_INTERNET_ROUTE=1
 
+  tailscale:
+    image: tailscale/tailscale:stable
+    privileged: true
+    restart: always
+    network_mode: host
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_AUTH_ONCE=true
+      - TS_HOSTNAME=tophand-ranchview-threadgill
+
+  frigate-backup:
+    build:
+      context: .
+      dockerfile: ./frigate-backup/Dockerfile
+    restart: always
+    network_mode: host
+    depends_on:
+      - frigate
+      - tailscale
+    labels:
+      io.balena.update.strategy: download-then-kill
+    volumes:
+      - frigate_media:/media/frigate:ro
+      - frigate_backup_state:/var/lib/tophand-backup
+    environment:
+      - TZ=America/Chicago
+      - BACKUP_INTERVAL_SECONDS=300
+      - BACKUP_SOURCE=/media/frigate
+      - BACKUP_DEST=travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/media/
+      - BACKUP_MANIFEST_DEST=travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/manifests/
+
 volumes:
   frigate_config:
   frigate_media:
   frigate_cache:
+  frigate_backup_state:
+  tailscale_state:
