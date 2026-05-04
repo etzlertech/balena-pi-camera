@@ -325,6 +325,14 @@
       grid-template-columns: repeat(2, 72px);
     }
 
+    .detailNav.hasTools {
+      grid-template-columns: repeat(2, 72px);
+    }
+
+    .detailNav.hasControl.hasTools {
+      grid-template-columns: repeat(3, 72px);
+    }
+
     .navButton {
       width: 64px;
       height: 64px;
@@ -336,7 +344,8 @@
       font-weight: 900;
     }
 
-    .detailNav.hasControl .navButton {
+    .detailNav.hasControl .navButton,
+    .detailNav.hasTools .navButton {
       width: 72px;
     }
 
@@ -733,14 +742,17 @@
       margin-bottom: 8px;
     }
 
-    .clipFeedTools,
+    .clipFeedHeader.compact {
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
     .archiveSearch {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1fr) 92px;
       gap: 8px;
     }
 
-    .clipModeButton,
     .archiveButton,
     .archiveDate {
       min-height: 44px;
@@ -753,7 +765,6 @@
       text-align: center;
     }
 
-    .clipModeButton.active,
     .archiveButton {
       background: var(--accent);
       border-color: var(--accent);
@@ -972,6 +983,7 @@
     <nav class="detailNav" id="detailNav" aria-label="Camera navigation">
       <button class="navButton active" id="detailHome" type="button">Home</button>
       <button class="navButton" id="controlToggle" type="button" hidden>Aim Cam</button>
+      <button class="navButton" id="archiveToggle" type="button" hidden>More</button>
     </nav>
   </section>
 
@@ -1207,6 +1219,7 @@
     const detailInfo = document.querySelector("#detailInfo");
     const detailNav = document.querySelector("#detailNav");
     const controlToggle = document.querySelector("#controlToggle");
+    const archiveToggle = document.querySelector("#archiveToggle");
     const controlPanel = document.querySelector("#controlPanel");
     const controlTitle = document.querySelector("#controlTitle");
     const controlStatus = document.querySelector("#controlStatus");
@@ -1694,6 +1707,7 @@
         clipFeedState[camera.id] = {
           mode: "recent",
           archiveDate: dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          archiveOpen: false,
           loading: false,
           status: "Loading last 24 hours...",
           loadedAt: 0
@@ -1780,6 +1794,7 @@
       const range = archiveRangeForDate(dateValue || state.archiveDate);
       state.mode = "archive";
       state.archiveDate = range.date;
+      state.archiveOpen = true;
       state.loading = true;
       state.status = `Searching ${range.date}...`;
       if (selected?.id === camera.id) openDetail(camera.id);
@@ -2163,8 +2178,11 @@
       `;
       const hasControl = selected.ptz || selected.zoom;
       detailNav.classList.toggle("hasControl", hasControl);
+      detailNav.classList.toggle("hasTools", selected.kind === "house");
       controlToggle.hidden = !hasControl;
       controlToggle.textContent = selected.ptz ? "Aim Cam" : "Zoom Cam";
+      archiveToggle.hidden = selected.kind !== "house";
+      archiveToggle.textContent = clipState(selected).archiveOpen ? "Less" : "More";
       detailScreen.setAttribute("aria-hidden", "false");
 
       window.clearInterval(refreshTimer);
@@ -2234,16 +2252,15 @@
       const clips = clipFeeds[camera.id] || [];
       const archiveDate = state.archiveDate || dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
       const status = state.status || `${clips.length} clips`;
-      const header = `
-        <div class="clipFeedHeader">
-          <div class="clipFeedTools" aria-label="${camera.name} clip window">
-            <button class="clipModeButton ${state.mode === "recent" ? "active" : ""}" type="button" data-clip-window="recent">24 Hours</button>
-            <button class="clipModeButton ${state.mode === "archive" ? "active" : ""}" type="button" data-clip-window="archive">Archive</button>
-          </div>
-          <div class="archiveSearch">
+      const archiveTools = state.archiveOpen
+        ? `<div class="archiveSearch">
             <input class="archiveDate" type="date" value="${archiveDate}" data-archive-date aria-label="Archive date">
             <button class="archiveButton" type="button" data-archive-search>Search</button>
-          </div>
+          </div>`
+        : "";
+      const header = `
+        <div class="clipFeedHeader ${state.archiveOpen ? "" : "compact"}">
+          ${archiveTools}
           <span class="clipFeedStatus">${state.loading ? "Loading..." : status}</span>
         </div>
       `;
@@ -2412,6 +2429,21 @@
       startSettingsPreview();
     });
     controlToggle.addEventListener("click", toggleControl);
+    archiveToggle.addEventListener("click", () => {
+      if (!selected || selected.kind !== "house") return;
+      const state = clipState(selected);
+      state.archiveOpen = !state.archiveOpen;
+      if (!state.archiveOpen && state.mode !== "recent") {
+        const camera = selected;
+        loadRecentClipsForCamera(camera).catch(() => {
+          state.loading = false;
+          state.status = "Could not load last 24 hours";
+          if (selected?.id === camera.id) openDetail(camera.id);
+        });
+      } else {
+        openDetail(selected.id);
+      }
+    });
     detailFrame.addEventListener("touchstart", (event) => {
       if (!getDetailZoomImage()) return;
       if (event.touches.length === 2) {
@@ -2473,18 +2505,7 @@
         openClip(clipButton.dataset.clipIndex);
         return;
       }
-      const recentButton = event.target.closest('[data-clip-window="recent"]');
-      if (recentButton && selected?.kind === "house") {
-        const camera = selected;
-        loadRecentClipsForCamera(camera).catch(() => {
-          const state = clipState(camera);
-          state.loading = false;
-          state.status = "Could not load last 24 hours";
-          if (selected?.id === camera.id) openDetail(camera.id);
-        });
-        return;
-      }
-      const archiveButton = event.target.closest("[data-archive-search], [data-clip-window=\"archive\"]");
+      const archiveButton = event.target.closest("[data-archive-search]");
       if (archiveButton && selected?.kind === "house") {
         const camera = selected;
         const dateInput = detailInfo.querySelector("[data-archive-date]");
