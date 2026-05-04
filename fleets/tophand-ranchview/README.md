@@ -47,14 +47,32 @@ The Frigate docs require the key to be named `PLUS_API_KEY` in the Docker/Balena
 
 `snapshots.clean_copy` is explicitly enabled so submitted images can be sent without timestamp/bounding-box overlays. Submit and verify examples before requesting the first tuned model.
 
-After a Frigate+ model is available, configure only the model path in `frigate/config.yml`:
+Frigate+ subscription status:
+
+- Plan status: active
+- Renewal date: 2027-05-03
+- Account page showed payment-management and cancellation controls available.
+- No payment card details are stored in this repo.
+
+Initial Frigate+ base model selected for the Pi 5 USB Coral:
+
+- Base model: 2026.1
+- Name: `yolov9s`
+- Size: `320x320`
+- Detector type: `edgetpu`
+- Train date: 2026-04-14
+- Model ID: `be9c11b486ba0e2b8ea13338d4cc66ee`
+
+Configure only the model path in `frigate/config.yml`:
 
 ```yaml
 model:
-  path: plus://<model_id>
+  path: plus://be9c11b486ba0e2b8ea13338d4cc66ee
 ```
 
-Then expand `objects.track` for Frigate+ labels such as `deer`, `cow`, `horse`, `goat`, `package`, `face`, `license_plate`, and delivery logos. Do not add those labels before the Frigate+ model is active because the current Coral/default model may not support them.
+The active tracked Frigate+ labels now include `person`, `face`, `license_plate`, `car`, `motorcycle`, `bicycle`, `school_bus`, `dog`, `cat`, `bird`, `deer`, `cow`, `horse`, `goat`, `package`, and delivery-logo attributes. Frigate+ does not currently expose plain `truck` as a supported label; pickups and most trucks should be reviewed as `car`, while supported delivery logos become vehicle attributes.
+
+`license_plate` here means detecting the plate object. Full OCR/plate-character recognition is Frigate LPR, which has separate hardware/runtime requirements and should be validated before enabling on the Pi 5. If OCR on the Pi is not viable, send plate crops/events upstream to the TopHand 5090 analysis path.
 
 ## Deploy
 
