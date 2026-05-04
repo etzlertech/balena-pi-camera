@@ -1139,6 +1139,8 @@
     let settingsDebug = true;
     let settingsPreviewTimer = null;
     let clipAutoplayPending = false;
+    let clipBlobUrl = "";
+    let clipLoadToken = 0;
     const settingsDraft = loadSettingsDraft();
     const refreshingThumbs = new Map();
     const detailZoom = {
@@ -1368,6 +1370,13 @@
       if (copy) copy.textContent = message;
     }
 
+    function clearClipBlobUrl() {
+      if (clipBlobUrl) {
+        URL.revokeObjectURL(clipBlobUrl);
+        clipBlobUrl = "";
+      }
+    }
+
     function armMobileClipPlayback() {
       clipVideo.muted = true;
       clipVideo.defaultMuted = true;
@@ -1385,6 +1394,33 @@
       } catch {
         setClipPlayerMessage("Tap Play to start this clip. Mobile browsers can block automatic clip playback.");
       } finally {
+        syncClipControls();
+      }
+    }
+
+    async function loadClipSource(url, token) {
+      setClipPlayerMessage("Loading clip from the live Frigate bridge...");
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) throw new Error(`clip ${response.status}`);
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.toLowerCase().includes("video")) throw new Error("not video");
+        const blob = await response.blob();
+        if (token !== clipLoadToken) return;
+        clearClipBlobUrl();
+        clipBlobUrl = URL.createObjectURL(blob);
+        clipVideo.src = clipBlobUrl;
+        clipVideo.load();
+        clipFallback.hidden = true;
+        clipVideo.hidden = false;
+        setClipPlayerMessage("Clip loaded. Tap Play if it does not start automatically.");
+        await startClipPlayback();
+      } catch {
+        if (token !== clipLoadToken) return;
+        clipAutoplayPending = false;
+        clipVideo.hidden = true;
+        clipFallback.hidden = false;
+        setClipPlayerMessage("This clip could not be loaded from the current Threadgill bridge.");
         syncClipControls();
       }
     }
@@ -2084,8 +2120,10 @@
       const clip = (clipFeeds[selected.id] || [])[Number(index)];
       if (!clip) return;
       const url = clipUrl(clip);
+      const token = ++clipLoadToken;
       clipVideo.pause();
       clipVideo.removeAttribute("src");
+      clearClipBlobUrl();
       clipVideo.className = rotationClass(selected);
       clipVideo.poster = clipThumb(clip);
       armMobileClipPlayback();
@@ -2098,22 +2136,22 @@
       clipPlayerInfo.innerHTML = `
         <span>${selected.name}</span>
         <strong>${clip.title}</strong>
-        <p>${url ? "Playing from the live Threadgill Frigate bridge." : "No retained clip URL is available for this card yet."}</p>
+        <p>${url ? "Loading clip from the live Frigate bridge..." : "No retained clip URL is available for this card yet."}</p>
       `;
       if (url) {
-        clipVideo.src = url;
-        clipVideo.load();
+        loadClipSource(url, token);
       }
       syncClipControls();
       clipPlayerScreen.setAttribute("aria-hidden", "false");
-      if (url) startClipPlayback();
     }
 
     function closeClipPlayer() {
       clipVideo.pause();
+      clipLoadToken += 1;
       clipAutoplayPending = false;
       clipVideo.removeAttribute("src");
       clipVideo.removeAttribute("class");
+      clearClipBlobUrl();
       clipVideo.load();
       resetClipControls();
       clipPlayerScreen.setAttribute("aria-hidden", "true");
@@ -2303,8 +2341,9 @@
       }
     });
     clipVideo.addEventListener("error", () => {
+      if (clipPlayerScreen.getAttribute("aria-hidden") === "true" || !clipVideo.getAttribute("src")) return;
       clipFallback.hidden = false;
-      clipPlayerInfo.querySelector("p").textContent = "This clip source is not available from the current demo media service.";
+      clipPlayerInfo.querySelector("p").textContent = "This clip source is not available from the current Threadgill bridge.";
     });
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
