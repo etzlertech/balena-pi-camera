@@ -936,7 +936,7 @@
     </header>
     <main class="panelBody">
       <div class="clipVideoShell" id="clipVideoShell">
-        <video id="clipVideo" playsinline preload="metadata"></video>
+        <video id="clipVideo" playsinline webkit-playsinline muted preload="metadata"></video>
       </div>
       <div class="clipControls" aria-label="Clip controls">
         <button class="clipControlButton" id="clipPlayPause" type="button">Play</button>
@@ -1138,6 +1138,7 @@
     let settingsMode = "mask";
     let settingsDebug = true;
     let settingsPreviewTimer = null;
+    let clipAutoplayPending = false;
     const settingsDraft = loadSettingsDraft();
     const refreshingThumbs = new Map();
     const detailZoom = {
@@ -1360,6 +1361,32 @@
         clipScrubber.disabled = true;
       }
       if (clipTime) clipTime.textContent = "0:00";
+    }
+
+    function setClipPlayerMessage(message) {
+      const copy = clipPlayerInfo?.querySelector("p");
+      if (copy) copy.textContent = message;
+    }
+
+    function armMobileClipPlayback() {
+      clipVideo.muted = true;
+      clipVideo.defaultMuted = true;
+      clipVideo.setAttribute("muted", "");
+      clipVideo.setAttribute("playsinline", "");
+      clipVideo.setAttribute("webkit-playsinline", "");
+    }
+
+    async function startClipPlayback() {
+      if (!clipVideo || !clipVideo.getAttribute("src")) return;
+      try {
+        await clipVideo.play();
+        clipAutoplayPending = false;
+        setClipPlayerMessage("Playing from the live Threadgill Frigate bridge.");
+      } catch {
+        setClipPlayerMessage("Tap Play to start this clip. Mobile browsers can block automatic clip playback.");
+      } finally {
+        syncClipControls();
+      }
     }
 
     function getDetailZoomImage() {
@@ -2031,7 +2058,9 @@
       clipVideo.removeAttribute("src");
       clipVideo.className = rotationClass(selected);
       clipVideo.poster = clipThumb(clip);
+      armMobileClipPlayback();
       resetClipControls();
+      clipAutoplayPending = Boolean(url);
       clipFallback.hidden = Boolean(url);
       clipVideo.hidden = !url;
       clipVideoShell.innerHTML = "";
@@ -2044,14 +2073,15 @@
       if (url) {
         clipVideo.src = url;
         clipVideo.load();
-        clipVideo.play().catch(() => {});
       }
       syncClipControls();
       clipPlayerScreen.setAttribute("aria-hidden", "false");
+      if (url) startClipPlayback();
     }
 
     function closeClipPlayer() {
       clipVideo.pause();
+      clipAutoplayPending = false;
       clipVideo.removeAttribute("src");
       clipVideo.removeAttribute("class");
       clipVideo.load();
@@ -2062,11 +2092,14 @@
     function toggleClipPlayback() {
       if (!clipVideo || !clipVideo.getAttribute("src")) return;
       if (clipVideo.paused) {
-        clipVideo.play().catch(() => {});
+        clipAutoplayPending = false;
+        startClipPlayback();
       } else {
         clipVideo.pause();
+        clipAutoplayPending = false;
+        setClipPlayerMessage("Paused. Tap Play to resume this clip.");
+        syncClipControls();
       }
-      syncClipControls();
     }
 
     function closeDetail() {
@@ -2225,6 +2258,9 @@
     clipPlayPause.addEventListener("click", toggleClipPlayback);
     clipVideo.addEventListener("click", toggleClipPlayback);
     clipVideo.addEventListener("loadedmetadata", syncClipControls);
+    clipVideo.addEventListener("canplay", () => {
+      if (clipAutoplayPending && clipVideo.paused) startClipPlayback();
+    });
     clipVideo.addEventListener("timeupdate", syncClipControls);
     clipVideo.addEventListener("play", syncClipControls);
     clipVideo.addEventListener("pause", syncClipControls);
