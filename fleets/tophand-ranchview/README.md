@@ -72,7 +72,25 @@ model:
 
 The active tracked Frigate+ labels now include `person`, `face`, `license_plate`, `car`, `motorcycle`, `bicycle`, `school_bus`, `dog`, `cat`, `bird`, `deer`, `cow`, `horse`, `goat`, `package`, and delivery-logo attributes. Frigate+ does not currently expose plain `truck` as a supported label; pickups and most trucks should be reviewed as `car`, while supported delivery logos become vehicle attributes.
 
-`license_plate` here means detecting the plate object. Full OCR/plate-character recognition is Frigate LPR, which has separate hardware/runtime requirements and should be validated before enabling on the Pi 5. If OCR on the Pi is not viable, send plate crops/events upstream to the TopHand 5090 analysis path.
+`license_plate` here means detecting the plate object. Full OCR/plate-character recognition is Frigate LPR, which is disabled by default and should not be assumed safe on the Pi 5 because Frigate documents AVX/AVX2 as a requirement for LPR/recognition workloads. The production path for Threadgill should be:
+
+1. Pi 5 + Coral detects `car`, `motorcycle`, and `license_plate` with the Frigate+ model.
+2. Frigate keeps the motion clip and clean snapshot so we do not lose the evidence.
+3. The TopHand bridge/upstream worker sends plate snapshots or crops to the 5090 OCR/VLM path for character recognition.
+4. The recognized text is written back to Frigate with `POST /api/events/:event_id/recognized_license_plate` and stored in the TopHand event database.
+5. The RanchView UI displays `recognized_license_plate` when Frigate events include it.
+
+If native Frigate LPR is tested on x86/5090 instead of the Pi, start with the simplest config and debug saved plates:
+
+```yaml
+lpr:
+  enabled: true
+  device: CPU
+  debug_save_plates: true
+  min_plate_length: 4
+```
+
+Only keep `debug_save_plates` on during tuning because Frigate does not automatically delete those debug crops.
 
 ## Deploy
 

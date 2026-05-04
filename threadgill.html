@@ -1535,10 +1535,40 @@
       if (selected?.kind === "trail") openDetail(selected.id);
     }
 
-    function eventLabelText(label) {
+    function displayPlateValue(value) {
+      if (!value) return "";
+      const raw = Array.isArray(value) ? value[0] : value;
+      return String(raw || "").trim().toUpperCase();
+    }
+
+    function eventPlateText(event) {
+      return displayPlateValue(
+        event?.recognized_license_plate ||
+        event?.data?.recognized_license_plate ||
+        (event?.label === "license_plate" ? event?.sub_label : "") ||
+        (event?.label === "license_plate" ? event?.data?.sub_label : "")
+      );
+    }
+
+    function eventLabelText(event) {
+      const label = typeof event === "string" ? event : event?.label;
+      const plate = typeof event === "string" ? "" : eventPlateText(event);
+      if (plate) return `Plate ${plate}`;
+      if (label === "license_plate") return "Plate detected";
       if (label === "person") return "Person detection";
       if (label === "car") return "Vehicle detection";
       return label ? `${label[0].toUpperCase()}${label.slice(1)} detection` : "Motion event";
+    }
+
+    function eventMetaText(camera, event) {
+      const parts = [camera.name, formatTrailTime(event.start_time ? event.start_time * 1000 : null)];
+      const plate = eventPlateText(event);
+      if (plate) {
+        parts.push(`Plate ${plate}`);
+      } else if (event.label === "license_plate") {
+        parts.push("Plate text pending");
+      }
+      return parts.filter(Boolean).join(" · ");
     }
 
     function recordingActivityText(recording) {
@@ -1596,8 +1626,8 @@
           .filter((event) => event.camera === camera.frigateCamera && event.has_clip && event.id)
           .slice(0, 8)
           .map((event) => ({
-            title: eventLabelText(event.label),
-            meta: `${camera.name} · ${formatTrailTime(event.start_time ? event.start_time * 1000 : null)}`,
+            title: eventLabelText(event),
+            meta: eventMetaText(camera, event),
             eventId: event.id,
             live: true
           }));

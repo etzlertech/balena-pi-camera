@@ -5,6 +5,7 @@ const BRIDGE_BASE = "http://89.116.191.85/threadgill-frigate";
 const ALLOWED_PATHS = [
   /^\/api\/version$/,
   /^\/api\/events$/,
+  /^\/api\/recognized_license_plates$/,
   /^\/api\/[^/]+\/latest\.jpg$/,
   /^\/api\/[^/]+\/recordings$/,
   /^\/api\/[^/]+\/recordings\/[0-9.]+\/snapshot\.jpg$/,
