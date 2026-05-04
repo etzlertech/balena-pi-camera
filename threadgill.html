@@ -727,6 +727,52 @@
       padding-right: 2px;
     }
 
+    .clipFeedHeader {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .clipFeedTools,
+    .archiveSearch {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .clipModeButton,
+    .archiveButton,
+    .archiveDate {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111713;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .clipModeButton.active,
+    .archiveButton {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #111713;
+    }
+
+    .archiveDate {
+      padding: 0 8px;
+      color-scheme: dark;
+    }
+
+    .clipFeedStatus {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 850;
+      line-height: 1.25;
+      min-height: 13px;
+    }
+
     .captureItem {
       position: relative;
       display: grid;
@@ -1127,7 +1173,10 @@
       }
     ];
 
+    const RECENT_CLIP_HOURS = 24;
+    const FRIGATE_EVENT_LIMIT = 500;
     const clipFeeds = {};
+    const clipFeedState = {};
 
     let filter = "all";
     let selected = null;
@@ -1619,55 +1668,140 @@
       return `${Math.round(duration)}s`;
     }
 
-    async function loadRecordingClips(camera, nowSeconds) {
-      const after = nowSeconds - 6 * 60 * 60;
-      const res = await fetch(frigateUrl(`/api/${camera.frigateCamera}/recordings`, { after, before: nowSeconds }), { cache: "no-store" });
+    function dateInputValue(date = new Date()) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function archiveRangeForDate(value) {
+      const fallback = dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const dateValue = value || fallback;
+      const start = new Date(`${dateValue}T00:00:00`);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 1);
+      const nowSafe = Math.floor(Date.now() / 1000) - 90;
+      return {
+        date: dateValue,
+        after: Math.floor(start.getTime() / 1000),
+        before: Math.min(Math.floor(end.getTime() / 1000), nowSafe)
+      };
+    }
+
+    function clipState(camera) {
+      if (!clipFeedState[camera.id]) {
+        clipFeedState[camera.id] = {
+          mode: "recent",
+          archiveDate: dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          loading: false,
+          status: "Loading last 24 hours...",
+          loadedAt: 0
+        };
+      }
+      return clipFeedState[camera.id];
+    }
+
+    async function loadRecordingClips(camera, after, before, sourceLabel = "Recording") {
+      const safeBefore = Math.min(before, Math.floor(Date.now() / 1000) - 90);
+      if (!camera.frigateCamera || safeBefore <= after) return [];
+      const res = await fetch(frigateUrl(`/api/${camera.frigateCamera}/recordings`, { after, before: safeBefore }), { cache: "no-store" });
       if (!res.ok) return [];
       const recordings = await res.json();
       if (!Array.isArray(recordings)) return [];
 
       return recordings
         .filter((recording) => Number(recording.start_time) > 0 && Number(recording.end_time) > Number(recording.start_time))
-        .filter((recording) => Number(recording.end_time) < nowSeconds - 90)
+        .filter((recording) => Number(recording.end_time) < Math.floor(Date.now() / 1000) - 90)
         .filter((recording) => Number(recording.motion) > 0 || Number(recording.objects) > 0)
         .sort((a, b) => Number(b.start_time) - Number(a.start_time))
-        .slice(0, 8)
         .map((recording) => {
           const start = Math.floor(Number(recording.start_time));
           const end = Math.ceil(Number(recording.end_time));
           const duration = Number(recording.duration || (end - start));
           return {
-            title: recordingActivityText(recording),
+            title: `${sourceLabel} - ${recordingActivityText(recording)}`,
             meta: `${camera.name} · ${formatTrailTime(start * 1000)} · ${recordingDurationText(recording)}`,
             recording: true,
             cameraName: camera.frigateCamera,
             recordingStart: start,
             recordingEnd: end,
-            thumbTime: Math.floor(Number(recording.start_time) + Math.max(1, Math.min(4, duration / 2)))
+            thumbTime: Math.floor(Number(recording.start_time) + Math.max(1, Math.min(4, duration / 2))),
+            sortTime: start
           };
         });
     }
 
+    function eventClipsForCamera(events, camera, after = 0, before = Number.MAX_SAFE_INTEGER) {
+      return events
+        .filter((event) => event.camera === camera.frigateCamera && event.has_clip && event.id)
+        .filter((event) => Number(event.start_time || 0) >= after && Number(event.start_time || 0) <= before)
+        .map((event) => ({
+          title: eventLabelText(event),
+          meta: eventMetaText(camera, event),
+          eventId: event.id,
+          live: true,
+          sortTime: Number(event.start_time || 0)
+        }));
+    }
+
+    function mergeClipLists(...lists) {
+      const seen = new Set();
+      return lists
+        .flat()
+        .filter((clip) => {
+          const key = clip.eventId ? `event:${clip.eventId}` : `recording:${clip.cameraName}:${clip.recordingStart}:${clip.recordingEnd}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => Number(b.sortTime || 0) - Number(a.sortTime || 0));
+    }
+
+    async function loadRecentClipsForCamera(camera, events = []) {
+      const state = clipState(camera);
+      state.mode = "recent";
+      state.loading = true;
+      state.status = "Loading last 24 hours...";
+      if (selected?.id === camera.id) openDetail(camera.id);
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const after = nowSeconds - RECENT_CLIP_HOURS * 60 * 60;
+      const recordings = await loadRecordingClips(camera, after, nowSeconds, "24h");
+      clipFeeds[camera.id] = mergeClipLists(eventClipsForCamera(events, camera, after, nowSeconds), recordings);
+      state.loading = false;
+      state.loadedAt = Date.now();
+      state.status = `${clipFeeds[camera.id].length} clips from last 24 hours`;
+      if (selected?.id === camera.id) openDetail(camera.id);
+    }
+
+    async function loadArchiveClipsForCamera(camera, dateValue) {
+      const state = clipState(camera);
+      const range = archiveRangeForDate(dateValue || state.archiveDate);
+      state.mode = "archive";
+      state.archiveDate = range.date;
+      state.loading = true;
+      state.status = `Searching ${range.date}...`;
+      if (selected?.id === camera.id) openDetail(camera.id);
+
+      const recordings = await loadRecordingClips(camera, range.after, range.before, "Archive");
+      clipFeeds[camera.id] = mergeClipLists(recordings);
+      state.loading = false;
+      state.loadedAt = Date.now();
+      state.status = `${clipFeeds[camera.id].length} clips found for ${range.date}`;
+      if (selected?.id === camera.id) openDetail(camera.id);
+    }
+
     async function loadLiveClips() {
       let events = [];
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      const res = await fetch(frigateUrl("/api/events", { limit: 100 }), { cache: "no-store" });
+      const res = await fetch(frigateUrl("/api/events", { limit: FRIGATE_EVENT_LIMIT }), { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) events = data;
       }
 
       await Promise.all(cameras.filter((item) => item.kind === "house" && item.frigateCamera).map(async (camera) => {
-        const cameraEvents = events
-          .filter((event) => event.camera === camera.frigateCamera && event.has_clip && event.id)
-          .slice(0, 8)
-          .map((event) => ({
-            title: eventLabelText(event),
-            meta: eventMetaText(camera, event),
-            eventId: event.id,
-            live: true
-          }));
-        clipFeeds[camera.id] = cameraEvents.length ? cameraEvents : await loadRecordingClips(camera, nowSeconds);
+        await loadRecentClipsForCamera(camera, events);
       }));
       if (selected?.kind === "house") openDetail(selected.id);
     }
@@ -2047,7 +2181,7 @@
     function renderFeedItem({ active = false, imageClass = "", imageUrl, title, meta, indexName, index, playable = false }) {
       return `
         <button class="captureItem ${active ? "active" : ""}" type="button" ${indexName}="${index}">
-          <img class="${imageClass}" src="${imageUrl}" alt="${title}">
+          <img class="${imageClass}" src="${imageUrl}" alt="${title}" loading="lazy">
           <div>
             <strong>${title}</strong>
             <span>${meta}</span>
@@ -2096,11 +2230,31 @@
     }
 
     function renderClipFeed(camera) {
+      const state = clipState(camera);
       const clips = clipFeeds[camera.id] || [];
+      const archiveDate = state.archiveDate || dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const status = state.status || `${clips.length} clips`;
+      const header = `
+        <div class="clipFeedHeader">
+          <div class="clipFeedTools" aria-label="${camera.name} clip window">
+            <button class="clipModeButton ${state.mode === "recent" ? "active" : ""}" type="button" data-clip-window="recent">24 Hours</button>
+            <button class="clipModeButton ${state.mode === "archive" ? "active" : ""}" type="button" data-clip-window="archive">Archive</button>
+          </div>
+          <div class="archiveSearch">
+            <input class="archiveDate" type="date" value="${archiveDate}" data-archive-date aria-label="Archive date">
+            <button class="archiveButton" type="button" data-archive-search>Search</button>
+          </div>
+          <span class="clipFeedStatus">${state.loading ? "Loading..." : status}</span>
+        </div>
+      `;
       if (!clips.length) {
-        return `<section class="captureFeed"><article class="captureItem"><div></div><div><strong>Loading recordings</strong><span>Waiting for recent motion clips from Frigate</span></div></article></section>`;
+        return `
+          ${header}
+          <section class="captureFeed"><article class="captureItem"><div></div><div><strong>${state.loading ? "Loading recordings" : "No clips found"}</strong><span>${state.mode === "archive" ? "Try another archive date" : "Waiting for recent motion clips from Frigate"}</span></div></article></section>
+        `;
       }
       return `
+        ${header}
         <section class="captureFeed" aria-label="${camera.name} recent clips">
           ${clips.map((clip, index) => renderFeedItem({
             imageClass: rotationClass(camera),
@@ -2317,6 +2471,29 @@
       const clipButton = event.target.closest("[data-clip-index]");
       if (clipButton && selected?.kind === "house") {
         openClip(clipButton.dataset.clipIndex);
+        return;
+      }
+      const recentButton = event.target.closest('[data-clip-window="recent"]');
+      if (recentButton && selected?.kind === "house") {
+        const camera = selected;
+        loadRecentClipsForCamera(camera).catch(() => {
+          const state = clipState(camera);
+          state.loading = false;
+          state.status = "Could not load last 24 hours";
+          if (selected?.id === camera.id) openDetail(camera.id);
+        });
+        return;
+      }
+      const archiveButton = event.target.closest("[data-archive-search], [data-clip-window=\"archive\"]");
+      if (archiveButton && selected?.kind === "house") {
+        const camera = selected;
+        const dateInput = detailInfo.querySelector("[data-archive-date]");
+        loadArchiveClipsForCamera(camera, dateInput?.value).catch(() => {
+          const state = clipState(camera);
+          state.loading = false;
+          state.status = "Archive search failed";
+          if (selected?.id === camera.id) openDetail(camera.id);
+        });
       }
     });
     document.querySelectorAll("[data-control]").forEach((button) => {
