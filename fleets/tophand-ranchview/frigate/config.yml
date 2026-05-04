@@ -50,11 +50,19 @@ record:
 
 snapshots:
   enabled: true
+  clean_copy: true
   timestamp: true
   bounding_box: true
   retain:
     default: 14
 
+# Frigate+ notes:
+# - PLUS_API_KEY must be set as a Balena/Docker environment variable, not here.
+# - After a Frigate+ model is selected/requested, add only the model path:
+#   model:
+#     path: plus://<model_id>
+# - Then expand objects.track for Frigate+ labels such as deer, cow, horse,
+#   goat, package, face, license_plate, and delivery logos.
 objects:
   track:
     - person

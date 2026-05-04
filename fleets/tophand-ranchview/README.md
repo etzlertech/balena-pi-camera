@@ -11,7 +11,7 @@ This release runs the Pi 5 edge baseline:
 - `frigate` service on port `8971`
 - USB Coral detector configured as `edgetpu` / `usb`
 - three Amcrest/Dahua-compatible cameras configured through Balena `FRIGATE_*` env vars
-- recording disabled until external SSD/NVMe storage is attached
+- motion recording enabled with short initial retention
 
 The old `coral-probe` service is kept in the repo as a diagnostic tool, but it is not part of the running compose stack because Frigate owns the Coral.
 
@@ -34,6 +34,27 @@ Defaults baked into the start wrapper:
 - `FRIGATE_AMCREST_03_SUBTYPE=1`
 
 If the Amcrest substream is not enabled, set `FRIGATE_AMCREST_01_SUBTYPE=0` temporarily and expect heavier CPU usage.
+
+## Frigate+ Env
+
+Set the Frigate+ API key in Balena as a service environment variable, not in git and not in `config.yml`:
+
+```powershell
+balena env set PLUS_API_KEY "<frigate-plus-api-key>" --fleet gh_etzlertech/tophand-ranchview --service frigate
+```
+
+The Frigate docs require the key to be named `PLUS_API_KEY` in the Docker/Balena environment. After deployment, the Frigate UI should expose the Frigate+ submission controls in Explore.
+
+`snapshots.clean_copy` is explicitly enabled so submitted images can be sent without timestamp/bounding-box overlays. Submit and verify examples before requesting the first tuned model.
+
+After a Frigate+ model is available, configure only the model path in `frigate/config.yml`:
+
+```yaml
+model:
+  path: plus://<model_id>
+```
+
+Then expand `objects.track` for Frigate+ labels such as `deer`, `cow`, `horse`, `goat`, `package`, `face`, `license_plate`, and delivery logos. Do not add those labels before the Frigate+ model is active because the current Coral/default model may not support them.
 
 ## Deploy
 
