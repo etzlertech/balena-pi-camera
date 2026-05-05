@@ -1299,6 +1299,35 @@
       return cacheBust(url);
     }
 
+    function fallbackImageSrc(camera) {
+      if (!camera) return "";
+      if (camera.kind === "house") {
+        return camera.cachedThumb || camera.preparedThumb || camera.sample || "";
+      }
+      if (camera.kind === "trail") {
+        return camera.activeImage?.url || camera.latestImage?.url || camera.sample || "";
+      }
+      return camera.sample || "";
+    }
+
+    function handleImageError(camera, img) {
+      const fallback = fallbackImageSrc(camera);
+      if (!img || !fallback || img.src === fallback || img.dataset.fallbackApplied === "true") return;
+      img.dataset.fallbackApplied = "true";
+      img.src = displayImageUrl(fallback);
+    }
+
+    function syncCameraStatus(camera) {
+      if (!camera) return;
+      document.querySelectorAll(`[data-camera-status="${camera.id}"]`).forEach((node) => {
+        node.textContent = statusText(camera);
+      });
+      if (selected?.id === camera.id) {
+        const node = detailInfo?.querySelector("[data-detail-status]");
+        if (node) node.textContent = selected.latestImage ? formatTrailTime(selected.latestImage.capturedAt) : statusText(selected);
+      }
+    }
+
     function thumbCacheRequest(camera) {
       return new Request(`${window.location.origin}/threadgill-thumb-cache/${encodeURIComponent(camera.id)}`);
     }
@@ -1347,8 +1376,13 @@
         camera.cachedThumb = objectUrl;
         camera.lastThumbSource = liveSrc;
         camera.lastThumbRefresh = now;
+        camera.liveBridgeOk = true;
         if (img?.isConnected && img.dataset.cameraId === camera.id) img.src = objectUrl;
+        syncCameraStatus(camera);
       } catch {
+        camera.liveBridgeOk = false;
+        handleImageError(camera, img);
+        syncCameraStatus(camera);
         // Keep the previous thumbnail visible when the live bridge or Supabase is slow.
       } finally {
         if (refreshingThumbs.get(camera.id) === liveSrc) refreshingThumbs.delete(camera.id);
@@ -1358,7 +1392,7 @@
     function detailStartImage(camera, liveSrc) {
       if (camera.kind === "trail") return liveSrc;
       const tileImg = document.querySelector(`img[data-camera-id="${camera.id}"]`);
-      return camera.cachedThumb || tileImg?.currentSrc || tileImg?.src || liveSrc;
+      return camera.cachedThumb || tileImg?.currentSrc || tileImg?.src || camera.preparedThumb || camera.sample || liveSrc;
     }
 
     function refreshDetailImage(camera, liveSrc) {
@@ -1374,6 +1408,9 @@
         if (detailPreload?.src === nextSrc) detailPreload = null;
       };
       loader.onerror = () => {
+        camera.liveBridgeOk = false;
+        const img = document.querySelector("#detailImage");
+        if (img) handleImageError(camera, img);
         if (detailPreload?.src === nextSrc) detailPreload = null;
       };
       loader.src = nextSrc;
@@ -1385,6 +1422,7 @@
 
     function statusText(camera) {
       if (apiBase && camera.kind === "house") return "Live";
+      if (camera.kind === "house" && camera.liveBridgeOk === false && camera.preparedThumb) return "Last known";
       if (camera.kind === "house" && camera.frigateCamera) return "Live";
       if (camera.kind === "trail" && camera.latestImage) return "Latest";
       if (camera.kind === "trail" && camera.sourceFolder) return "Loading";
@@ -1736,6 +1774,20 @@
         .sort((a, b) => Number(b.sortTime || 0) - Number(a.sortTime || 0));
     }
 
+    function applyPreparedFallbacks(index) {
+      if (!index?.clips?.length) return;
+      for (const camera of cameras.filter((item) => item.kind === "house" && item.frigateCamera)) {
+        const latest = index.clips
+          .filter((clip) => clip.camera === camera.frigateCamera && clip.thumbPath)
+          .sort((a, b) => Number(b.startTime || 0) - Number(a.startTime || 0))[0];
+        if (!latest) continue;
+        camera.preparedThumb = mediaUrl(latest.thumbPath);
+        camera.preparedThumbAt = Number(latest.startTime || 0);
+      }
+      renderGrid();
+      if (selected?.kind === "house") openDetail(selected.id);
+    }
+
     function dateInputValue(date = new Date()) {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -1881,6 +1933,7 @@
       let events = [];
       const prepared = await loadPreparedIndex().catch(() => null);
       if (prepared?.clips?.length) {
+        applyPreparedFallbacks(prepared);
         for (const camera of cameras.filter((item) => item.kind === "house" && item.frigateCamera)) {
           const state = clipState(camera);
           const clips = preparedClipsForCamera(prepared, camera);
@@ -2220,7 +2273,8 @@
         tile.className = `tile ${camera.kind}`;
         tile.type = "button";
         const src = imageSrc(camera);
-        const initialSrc = camera.cachedThumb || (src ? cacheBust(src) : "");
+        const fallbackSrc = fallbackImageSrc(camera);
+        const initialSrc = camera.cachedThumb || camera.preparedThumb || fallbackSrc || (src ? cacheBust(src) : "");
         const media = initialSrc
           ? `<img class="${rotationClass(camera)}" data-camera-id="${camera.id}" src="${initialSrc}" alt="${camera.name}" loading="eager">`
           : `<div class="placeholder">${camera.zone}</div>`;
@@ -2232,11 +2286,12 @@
             <strong>${camera.name}</strong>
             <span>${camera.zone}</span>
           </span>
-          <span class="tileAction">${statusText(camera)}</span>
+          <span class="tileAction" data-camera-status="${camera.id}">${statusText(camera)}</span>
         `;
         tile.addEventListener("click", () => openDetail(camera.id));
         grid.appendChild(tile);
         const img = tile.querySelector("img[data-camera-id]");
+        if (img) img.addEventListener("error", () => handleImageError(camera, img));
         if (img && src) refreshHomeThumb(camera, img, src);
       }
     }
@@ -2253,12 +2308,14 @@
         ? `<div id="detailZoomSurface" class="detailZoomSurface"><img id="detailImage" class="${rotationClass(selected)}" src="${displayImageUrl(initialSrc)}" alt="${selected.name}"></div>`
         : `<div class="placeholder">${selected.zone}</div>`;
       detailFrame.innerHTML = `${media}<span class="brandMark">RanchView</span>`;
+      const detailImg = detailFrame.querySelector("#detailImage");
+      if (detailImg) detailImg.addEventListener("error", () => handleImageError(selected, detailImg));
       detailInfo.innerHTML = `
         <h2>${selected.name}</h2>
         <dl>
           <div><dt>Zone</dt><dd>${selected.zone}</dd></div>
           <div><dt>Source</dt><dd>${selected.sourceLabel || selected.type}</dd></div>
-          <div><dt>Status</dt><dd>${selected.latestImage ? formatTrailTime(selected.latestImage.capturedAt) : statusText(selected)}</dd></div>
+          <div><dt>Status</dt><dd data-detail-status>${selected.latestImage ? formatTrailTime(selected.latestImage.capturedAt) : statusText(selected)}</dd></div>
         </dl>
         ${renderDetailFeed(selected)}
       `;
