@@ -861,6 +861,17 @@
       pointer-events: none;
     }
 
+    .captureMoreButton {
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
     .clipVideoShell {
       width: 100%;
       aspect-ratio: 16 / 9;
@@ -1188,6 +1199,8 @@
 
     const RECENT_CLIP_HOURS = 24;
     const FRIGATE_EVENT_LIMIT = 500;
+    const CLIP_RENDER_INITIAL = 80;
+    const CLIP_RENDER_STEP = 80;
     const clipFeeds = {};
     const clipFeedState = {};
 
@@ -1752,7 +1765,8 @@
           archiveOpen: false,
           loading: false,
           status: "Loading last 24 hours...",
-          loadedAt: 0
+          loadedAt: 0,
+          visibleLimit: CLIP_RENDER_INITIAL
         };
       }
       return clipFeedState[camera.id];
@@ -1827,6 +1841,7 @@
       clipFeeds[camera.id] = mergeClipLists(eventClipsForCamera(events, camera, after, nowSeconds), recordings);
       state.loading = false;
       state.loadedAt = Date.now();
+      state.visibleLimit = CLIP_RENDER_INITIAL;
       state.status = `${clipFeeds[camera.id].length} clips from last 24 hours`;
       if (selected?.id === camera.id) openDetail(camera.id);
     }
@@ -1847,6 +1862,7 @@
         clipFeeds[camera.id] = preparedClips;
         state.loading = false;
         state.loadedAt = Date.now();
+        state.visibleLimit = CLIP_RENDER_INITIAL;
         state.status = `${preparedClips.length} prepared clips for ${range.date}`;
         if (selected?.id === camera.id) openDetail(camera.id);
         return;
@@ -1856,6 +1872,7 @@
       clipFeeds[camera.id] = mergeClipLists(recordings);
       state.loading = false;
       state.loadedAt = Date.now();
+      state.visibleLimit = CLIP_RENDER_INITIAL;
       state.status = `${clipFeeds[camera.id].length} clips found for ${range.date}`;
       if (selected?.id === camera.id) openDetail(camera.id);
     }
@@ -1871,6 +1888,7 @@
           state.mode = "recent";
           state.loading = false;
           state.loadedAt = Date.now();
+          state.visibleLimit = CLIP_RENDER_INITIAL;
           state.status = `${clips.length} prepared clips from last 24 hours`;
         }
         if (selected?.kind === "house") openDetail(selected.id);
@@ -2267,7 +2285,7 @@
     function renderFeedItem({ active = false, imageClass = "", imageUrl, title, meta, indexName, index, playable = false }) {
       return `
         <button class="captureItem ${active ? "active" : ""}" type="button" ${indexName}="${index}">
-          <img class="${imageClass}" src="${imageUrl}" alt="${title}" loading="lazy">
+          <img class="${imageClass}" src="${imageUrl}" alt="${title}" loading="lazy" decoding="async">
           <div>
             <strong>${title}</strong>
             <span>${meta}</span>
@@ -2319,7 +2337,10 @@
       const state = clipState(camera);
       const clips = clipFeeds[camera.id] || [];
       const archiveDate = state.archiveDate || dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const visibleLimit = Math.min(clips.length, state.visibleLimit || CLIP_RENDER_INITIAL);
+      const visibleClips = clips.slice(0, visibleLimit);
       const status = state.status || `${clips.length} clips`;
+      const displayStatus = clips.length > visibleLimit ? `${status} · showing ${visibleLimit}` : status;
       const archiveTools = state.archiveOpen
         ? `<div class="archiveSearch">
             <input class="archiveDate" type="date" value="${archiveDate}" data-archive-date aria-label="Archive date">
@@ -2329,7 +2350,7 @@
       const header = `
         <div class="clipFeedHeader ${state.archiveOpen ? "" : "compact"}">
           ${archiveTools}
-          <span class="clipFeedStatus">${state.loading ? "Loading..." : status}</span>
+          <span class="clipFeedStatus">${state.loading ? "Loading..." : displayStatus}</span>
         </div>
       `;
       if (!clips.length) {
@@ -2341,7 +2362,7 @@
       return `
         ${header}
         <section class="captureFeed" aria-label="${camera.name} recent clips">
-          ${clips.map((clip, index) => renderFeedItem({
+          ${visibleClips.map((clip, index) => renderFeedItem({
             imageClass: rotationClass(camera),
             imageUrl: clipThumb(clip),
             title: clip.title,
@@ -2350,6 +2371,7 @@
             index,
             playable: true
           })).join("")}
+          ${clips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${clips.length - visibleLimit})</button>` : ""}
         </section>
       `;
     }
@@ -2575,6 +2597,14 @@
       const clipButton = event.target.closest("[data-clip-index]");
       if (clipButton && selected?.kind === "house") {
         openClip(clipButton.dataset.clipIndex);
+        return;
+      }
+      const moreButton = event.target.closest("[data-clip-more]");
+      if (moreButton && selected?.kind === "house") {
+        const state = clipState(selected);
+        const clips = clipFeeds[selected.id] || [];
+        state.visibleLimit = Math.min(clips.length, (state.visibleLimit || CLIP_RENDER_INITIAL) + CLIP_RENDER_STEP);
+        openDetail(selected.id);
         return;
       }
       const archiveButton = event.target.closest("[data-archive-search]");
