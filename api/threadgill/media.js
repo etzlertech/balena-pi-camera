@@ -5,6 +5,8 @@ const MEDIA_BASE = "http://89.116.191.85";
 const ALLOWED_PATHS = [
   /^\/threadgill-media\/index\.json$/,
   /^\/threadgill-media\/archive\/[0-9]{4}-[0-9]{2}-[0-9]{2}\.json$/,
+  /^\/threadgill-media\/alerts\/[A-Za-z0-9_-]+\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/[A-Za-z0-9_.-]+\.jpg$/,
+  /^\/threadgill-media\/alert-crops\/[A-Za-z0-9_-]+\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/[A-Za-z0-9_.-]+\.jpg$/,
   /^\/threadgill-media\/thumbs\/[A-Za-z0-9_-]+\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/[A-Za-z0-9_.-]+\.jpg$/,
   /^\/threadgill-media\/mms-thumbs\/[A-Za-z0-9_-]+\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/[A-Za-z0-9_.-]+\.jpg$/,
   /^\/threadgill-media\/proxies\/[A-Za-z0-9_-]+\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/[A-Za-z0-9_.-]+\.mp4$/,
