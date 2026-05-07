@@ -2400,8 +2400,9 @@
     }
 
     function renderFeedItem({ active = false, imageClass = "", imageUrl, title, meta, indexName, index, playable = false }) {
+      const indexAttr = indexName ? `${indexName}="${index}"` : "";
       return `
-        <button class="captureItem ${active ? "active" : ""}" type="button" ${indexName}="${index}">
+        <button class="captureItem ${active ? "active" : ""}" type="button" ${indexAttr}>
           <img class="${imageClass}" src="${imageUrl}" alt="${title}" loading="lazy" decoding="async">
           <div>
             <strong>${title}</strong>
@@ -2433,7 +2434,7 @@
     function clipUrl(clip) {
       if (clip.url) return clip.url;
       if (clip.recording && clip.cameraName && clip.recordingStart && clip.recordingEnd) {
-        return frigateUrl(`/api/${clip.cameraName}/start/${clip.recordingStart}/end/${clip.recordingEnd}/clip.mp4`);
+        return "";
       }
       if (!clip.eventId) return "";
       if (apiBase) {
@@ -2479,15 +2480,18 @@
       return `
         ${header}
         <section class="captureFeed" aria-label="${camera.name} recent clips">
-          ${visibleClips.map((clip, index) => renderFeedItem({
-            imageClass: rotationClass(camera),
-            imageUrl: clipThumb(clip),
-            title: clip.title,
-            meta: clip.meta,
-            indexName: "data-clip-index",
-            index,
-            playable: true
-          })).join("")}
+          ${visibleClips.map((clip, index) => {
+            const playable = Boolean(clip.url || clip.eventId);
+            return renderFeedItem({
+              imageClass: rotationClass(camera),
+              imageUrl: clipThumb(clip),
+              title: playable ? clip.title : `${clip.title} processing`,
+              meta: playable ? clip.meta : `${clip.meta} · preparing playback`,
+              indexName: playable ? "data-clip-index" : "",
+              index,
+              playable
+            });
+          }).join("")}
           ${clips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${clips.length - visibleLimit})</button>` : ""}
         </section>
       `;
