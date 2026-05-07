@@ -1917,21 +1917,23 @@
         .sort((a, b) => Number(b.sortTime || 0) - Number(a.sortTime || 0));
     }
 
-    async function loadRecentClipsForCamera(camera, events = []) {
+    async function loadRecentClipsForCamera(camera, events = [], baseClips = []) {
       const state = clipState(camera);
       state.mode = "recent";
       state.loading = true;
-      state.status = "Loading prepared clip feed...";
+      state.status = baseClips.length ? `${baseClips.length} prepared clips; checking live recordings...` : "Loading recent recordings...";
       if (selected?.id === camera.id) openDetail(camera.id);
 
       const nowSeconds = Math.floor(Date.now() / 1000);
       const after = nowSeconds - RECENT_CLIP_HOURS * 60 * 60;
       const recordings = await loadRecordingClips(camera, after, nowSeconds, "24h");
-      clipFeeds[camera.id] = mergeClipLists(eventClipsForCamera(events, camera, after, nowSeconds), recordings);
+      clipFeeds[camera.id] = mergeClipLists(baseClips, eventClipsForCamera(events, camera, after, nowSeconds), recordings);
       state.loading = false;
       state.loadedAt = Date.now();
       state.visibleLimit = CLIP_RENDER_INITIAL;
-      state.status = `${clipFeeds[camera.id].length} clips from last 24 hours`;
+      state.status = baseClips.length
+        ? `${clipFeeds[camera.id].length} recent clips · ${baseClips.length} prepared for fast playback`
+        : `${clipFeeds[camera.id].length} clips from last 24 hours`;
       if (selected?.id === camera.id) openDetail(camera.id);
     }
 
@@ -1969,9 +1971,9 @@
     async function loadLiveClips() {
       let events = [];
       const prepared = await loadPreparedIndex().catch(() => null);
+      const hasPrepared = Boolean(prepared?.clips?.length);
       if (prepared?.clips?.length) {
         setPreparedClipFeeds(prepared);
-        return;
       }
 
       let liveBridgeAvailable = false;
@@ -1987,12 +1989,22 @@
       }
 
       await Promise.all(cameras.filter((item) => item.kind === "house" && item.frigateCamera).map(async (camera) => {
-        await loadRecentClipsForCamera(camera, events);
+        const baseClips = preparedClipsForCamera(prepared, camera);
+        try {
+          await loadRecentClipsForCamera(camera, events, baseClips);
+        } catch {
+          const state = clipState(camera);
+          state.loading = false;
+          state.status = baseClips.length
+            ? `${baseClips.length} prepared clips; live recording check failed`
+            : "Could not load last 24 hours";
+          if (selected?.id === camera.id) openDetail(camera.id);
+        }
       }));
       const liveClipCount = cameras
         .filter((item) => item.kind === "house" && item.frigateCamera)
         .reduce((sum, camera) => sum + (clipFeeds[camera.id]?.length || 0), 0);
-      if (!liveClipCount) {
+      if (!liveClipCount && !hasPrepared) {
         const archive = await loadLatestPreparedArchive();
         if (archive?.prepared?.clips?.length) {
           setPreparedClipFeeds(archive.prepared, {
