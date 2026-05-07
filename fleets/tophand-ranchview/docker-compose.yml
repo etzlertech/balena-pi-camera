@@ -81,9 +81,31 @@ services:
       - BACKUP_DEST=travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/media/
       - BACKUP_MANIFEST_DEST=travis@100.120.124.113:/data/archive/threadgill/frigate-recordings/manifests/
 
+  frigate-bridge-tunnel:
+    build:
+      context: .
+      dockerfile: ./frigate-bridge-tunnel/Dockerfile
+    restart: always
+    network_mode: host
+    depends_on:
+      - frigate
+    labels:
+      io.balena.update.strategy: download-then-kill
+    volumes:
+      - frigate_bridge_tunnel_state:/var/lib/tophand-bridge-tunnel
+    environment:
+      - TZ=America/Chicago
+      - BRIDGE_REMOTE=root@89.116.191.85
+      - BRIDGE_REMOTE_BIND=127.0.0.1
+      - BRIDGE_REMOTE_PORT=15360
+      - BRIDGE_LOCAL_HOST=127.0.0.1
+      - BRIDGE_LOCAL_PORT=5000
+      - BRIDGE_RETRY_SECONDS=15
+
 volumes:
   frigate_config:
   frigate_media:
   frigate_cache:
   frigate_backup_state:
+  frigate_bridge_tunnel_state:
   tailscale_state:
