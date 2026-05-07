@@ -1244,6 +1244,19 @@
     const CLIP_RENDER_INITIAL = 80;
     const CLIP_RENDER_STEP = 80;
     const LOW_MOTION_SCORE = 25;
+    const CLIP_FILTER_LABELS = ["person", "cat", "car"];
+    const CLIP_FILTER_LABEL_TEXT = {
+      person: "People",
+      cat: "Cat",
+      car: "Car",
+      dog: "Dog",
+      license_plate: "Plate",
+      deer: "Deer",
+      cow: "Cow",
+      horse: "Horse",
+      goat: "Goat",
+      package: "Package"
+    };
     const clipFeeds = {};
     const clipFeedState = {};
 
@@ -2518,10 +2531,17 @@
       return clip.thumb || "";
     }
 
+    function clipFilterLabel(label) {
+      if (label === "all") return "All";
+      if (label === "objects") return "Objects";
+      return CLIP_FILTER_LABEL_TEXT[label] || label.replace("_", " ");
+    }
+
     function renderClipFeed(camera) {
       const state = clipState(camera);
       const clips = clipFeeds[camera.id] || [];
-      const labels = [...new Set(clips.flatMap((clip) => clip.objectLabels || []))].sort();
+      const detectedLabels = clips.flatMap((clip) => clip.objectLabels || []);
+      const labels = [...new Set([...CLIP_FILTER_LABELS, ...detectedLabels])].sort((a, b) => clipFilterLabel(a).localeCompare(clipFilterLabel(b)));
       const activeFilter = state.objectFilter || "all";
       const filteredClips = activeFilter === "all"
         ? clips
@@ -2533,7 +2553,7 @@
       const visibleClips = filteredClips.slice(0, visibleLimit);
       const visibleEntries = visibleClips.map((clip) => ({ clip, index: clips.indexOf(clip) }));
       const status = state.status || `${clips.length} clips`;
-      const filterStatus = activeFilter === "all" ? status : `${filteredClips.length} ${activeFilter.replace("_", " ")} clips`;
+      const filterStatus = activeFilter === "all" ? status : `${filteredClips.length} ${clipFilterLabel(activeFilter)} clips`;
       const displayStatus = filteredClips.length > visibleLimit ? `${filterStatus} · showing ${visibleLimit}` : filterStatus;
       const archiveTools = state.archiveOpen
         ? `<div class="archiveSearch">
@@ -2543,15 +2563,13 @@
             <button class="archiveButton" type="button" data-archive-search>Search</button>
           </div>`
         : "";
-      const filterTools = labels.length
-        ? `<div class="clipFilterRow">
-            ${["all", "objects", ...labels].map((label) => `
-              <button class="clipFilterButton ${activeFilter === label ? "active" : ""}" type="button" data-clip-filter="${label}">
-                ${label === "all" ? "All" : label === "objects" ? "Objects" : label.replace("_", " ")}
-              </button>
-            `).join("")}
-          </div>`
-        : "";
+      const filterTools = `<div class="clipFilterRow">
+        ${["all", "objects", ...labels].map((label) => `
+          <button class="clipFilterButton ${activeFilter === label ? "active" : ""}" type="button" data-clip-filter="${label}">
+            ${clipFilterLabel(label)}
+          </button>
+        `).join("")}
+      </div>`;
       const header = `
         <div class="clipFeedHeader ${state.archiveOpen ? "" : "compact"}">
           ${archiveTools}
