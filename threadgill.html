@@ -736,20 +736,32 @@
       padding-right: 2px;
     }
 
+    .clipFeedPanel {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+    }
+
     .clipFeedHeader {
       display: grid;
       gap: 8px;
-      margin-bottom: 8px;
+      position: relative;
+      z-index: 4;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 8px;
+      background: var(--panel);
     }
 
     .clipFeedHeader.compact {
       gap: 4px;
-      margin-bottom: 6px;
+      border-bottom: 0;
+      padding-bottom: 0;
     }
 
     .archiveSearch {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 92px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
     }
 
@@ -769,6 +781,12 @@
       background: var(--accent);
       border-color: var(--accent);
       color: #111713;
+    }
+
+    .archiveButton.secondary {
+      background: #202a22;
+      border-color: var(--line);
+      color: var(--ink);
     }
 
     .archiveDate {
@@ -1202,6 +1220,7 @@
     const FRIGATE_EVENT_LIMIT = 500;
     const CLIP_RENDER_INITIAL = 80;
     const CLIP_RENDER_STEP = 80;
+    const LOW_MOTION_SCORE = 25;
     const clipFeeds = {};
     const clipFeedState = {};
 
@@ -1724,7 +1743,8 @@
 
     function recordingActivityText(recording) {
       if (Number(recording.objects) > 0) return "Object recording";
-      if (Number(recording.motion) > 0) return "Motion recording";
+      if (Number(recording.motion) >= LOW_MOTION_SCORE) return "Motion recording";
+      if (Number(recording.motion) > 0) return "Low motion";
       return "Recent recording";
     }
 
@@ -1738,15 +1758,20 @@
       const start = Number(clip.startTime || 0);
       const duration = Number(clip.duration || Math.max(0, Number(clip.endTime || 0) - start));
       const durationText = Number.isFinite(duration) && duration > 0 ? `${Math.round(duration)}s` : "Clip";
-      return `${camera.name} · ${formatTrailTime(start * 1000)} · ${durationText}`;
+      const motion = Number(clip.motion || 0);
+      const scoreText = motion > 0 ? ` · M${Math.round(motion)}` : "";
+      return `${camera.name} · ${formatTrailTime(start * 1000)} · ${durationText}${scoreText}`;
     }
 
     function preparedClipRecord(camera, clip) {
       const start = Math.floor(Number(clip.startTime || 0));
       const end = Math.ceil(Number(clip.endTime || 0));
       if (!start || !end || end <= start) return null;
+      const motion = Number(clip.motion || 0);
+      const objects = Number(clip.objects || 0);
+      const title = objects > 0 ? "Object recording" : motion >= LOW_MOTION_SCORE ? "Motion recording" : "Low motion";
       return {
-        title: clip.title || clip.label || "Motion recording",
+        title,
         meta: preparedClipMeta(camera, clip),
         thumb: mediaUrl(clip.thumbPath),
         url: clip.proxyPath ? mediaUrl(clip.proxyPath) : "",
@@ -1755,6 +1780,8 @@
         cameraName: camera.frigateCamera,
         recordingStart: start,
         recordingEnd: end,
+        motion,
+        objects,
         sortTime: start
       };
     }
@@ -1812,6 +1839,14 @@
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
+    }
+
+    function shiftDateValue(value, days) {
+      const base = value || dateInputValue(new Date());
+      const date = new Date(`${base}T12:00:00`);
+      if (Number.isNaN(date.getTime())) return base;
+      date.setDate(date.getDate() + days);
+      return dateInputValue(date);
     }
 
     function recentArchiveDates(days = ARCHIVE_FALLBACK_DAYS) {
@@ -1872,20 +1907,23 @@
       return recordings
         .filter((recording) => Number(recording.start_time) > 0 && Number(recording.end_time) > Number(recording.start_time))
         .filter((recording) => Number(recording.end_time) < Math.floor(Date.now() / 1000) - 90)
-        .filter((recording) => Number(recording.motion) > 0 || Number(recording.objects) > 0)
+        .filter((recording) => Number(recording.motion) >= LOW_MOTION_SCORE || Number(recording.objects) > 0)
         .sort((a, b) => Number(b.start_time) - Number(a.start_time))
         .map((recording) => {
           const start = Math.floor(Number(recording.start_time));
           const end = Math.ceil(Number(recording.end_time));
           const duration = Number(recording.duration || (end - start));
+          const motion = Number(recording.motion || 0);
           return {
             title: recordingActivityText(recording),
-            meta: `${camera.name} · ${formatTrailTime(start * 1000)} · ${recordingDurationText(recording)}`,
+            meta: `${camera.name} · ${formatTrailTime(start * 1000)} · ${recordingDurationText(recording)}${motion > 0 ? ` · M${Math.round(motion)}` : ""}`,
             recording: true,
             cameraName: camera.frigateCamera,
             recordingStart: start,
             recordingEnd: end,
             thumbTime: Math.floor(Number(recording.start_time) + Math.max(1, Math.min(4, duration / 2))),
+            motion,
+            objects: Number(recording.objects || 0),
             sortTime: start
           };
         });
@@ -2461,6 +2499,8 @@
       const displayStatus = clips.length > visibleLimit ? `${status} · showing ${visibleLimit}` : status;
       const archiveTools = state.archiveOpen
         ? `<div class="archiveSearch">
+            <button class="archiveButton secondary" type="button" data-archive-prev>Prev Day</button>
+            <button class="archiveButton secondary" type="button" data-archive-next>Next Day</button>
             <input class="archiveDate" type="date" value="${archiveDate}" data-archive-date aria-label="Archive date">
             <button class="archiveButton" type="button" data-archive-search>Search</button>
           </div>`
@@ -2473,27 +2513,31 @@
       `;
       if (!clips.length) {
         return `
-          ${header}
-          <section class="captureFeed"><article class="captureItem"><div></div><div><strong>${state.loading ? "Loading recordings" : "No clips found"}</strong><span>${state.mode === "archive" ? "Try another archive date" : "Waiting for recent motion clips from Frigate"}</span></div></article></section>
+          <div class="clipFeedPanel">
+            ${header}
+            <section class="captureFeed"><article class="captureItem"><div></div><div><strong>${state.loading ? "Loading recordings" : "No clips found"}</strong><span>${state.mode === "archive" ? "Try another archive date" : "Waiting for recent motion clips from Frigate"}</span></div></article></section>
+          </div>
         `;
       }
       return `
-        ${header}
-        <section class="captureFeed" aria-label="${camera.name} recent clips">
-          ${visibleClips.map((clip, index) => {
-            const playable = Boolean(clip.url || clip.eventId);
-            return renderFeedItem({
-              imageClass: rotationClass(camera),
-              imageUrl: clipThumb(clip),
-              title: playable ? clip.title : `${clip.title} processing`,
-              meta: playable ? clip.meta : `${clip.meta} · preparing playback`,
-              indexName: playable ? "data-clip-index" : "",
-              index,
-              playable
-            });
-          }).join("")}
-          ${clips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${clips.length - visibleLimit})</button>` : ""}
-        </section>
+        <div class="clipFeedPanel">
+          ${header}
+          <section class="captureFeed" aria-label="${camera.name} recent clips">
+            ${visibleClips.map((clip, index) => {
+              const playable = Boolean(clip.url || clip.eventId);
+              return renderFeedItem({
+                imageClass: rotationClass(camera),
+                imageUrl: clipThumb(clip),
+                title: playable ? clip.title : `${clip.title} processing`,
+                meta: playable ? clip.meta : `${clip.meta} · preparing playback`,
+                indexName: playable ? "data-clip-index" : "",
+                index,
+                playable
+              });
+            }).join("")}
+            ${clips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${clips.length - visibleLimit})</button>` : ""}
+          </section>
+        </div>
       `;
     }
 
@@ -2733,6 +2777,19 @@
         const camera = selected;
         const dateInput = detailInfo.querySelector("[data-archive-date]");
         loadArchiveClipsForCamera(camera, dateInput?.value).catch(() => {
+          const state = clipState(camera);
+          state.loading = false;
+          state.status = "Archive search failed";
+          if (selected?.id === camera.id) openDetail(camera.id);
+        });
+      }
+      const archivePrev = event.target.closest("[data-archive-prev]");
+      const archiveNext = event.target.closest("[data-archive-next]");
+      if ((archivePrev || archiveNext) && selected?.kind === "house") {
+        const camera = selected;
+        const dateInput = detailInfo.querySelector("[data-archive-date]");
+        const nextDate = shiftDateValue(dateInput?.value, archivePrev ? -1 : 1);
+        loadArchiveClipsForCamera(camera, nextDate).catch(() => {
           const state = clipState(camera);
           state.loading = false;
           state.status = "Archive search failed";
