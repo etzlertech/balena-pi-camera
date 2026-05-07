@@ -765,6 +765,29 @@
       gap: 8px;
     }
 
+    .clipFilterRow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .clipFilterButton {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202a22;
+      color: var(--ink);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .clipFilterButton.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #111713;
+    }
+
     .archiveButton,
     .archiveDate {
       min-height: 44px;
@@ -1769,9 +1792,10 @@
       if (!start || !end || end <= start) return null;
       const motion = Number(clip.motion || 0);
       const objects = Number(clip.objects || 0);
+      const objectLabels = Array.isArray(clip.objectLabels) ? clip.objectLabels.filter(Boolean).map(String) : [];
       const title = objects > 0 ? "Object recording" : motion >= LOW_MOTION_SCORE ? "Motion recording" : "Low motion";
       return {
-        title,
+        title: clip.title || title,
         meta: preparedClipMeta(camera, clip),
         thumb: mediaUrl(clip.thumbPath),
         url: clip.proxyPath ? mediaUrl(clip.proxyPath) : "",
@@ -1782,6 +1806,9 @@
         recordingEnd: end,
         motion,
         objects,
+        objectLabels,
+        eventIds: Array.isArray(clip.eventIds) ? clip.eventIds : [],
+        eventScore: Number(clip.eventScore || 0),
         sortTime: start
       };
     }
@@ -1887,6 +1914,7 @@
           mode: "recent",
           archiveDate: dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)),
           archiveOpen: false,
+          objectFilter: "all",
           loading: false,
           status: "Loading last 24 hours...",
           loadedAt: 0,
@@ -1937,6 +1965,7 @@
           title: eventLabelText(event),
           meta: eventMetaText(camera, event),
           eventId: event.id,
+          objectLabels: event.label ? [event.label] : [],
           live: true,
           sortTime: Number(event.start_time || 0)
         }));
@@ -2492,11 +2521,20 @@
     function renderClipFeed(camera) {
       const state = clipState(camera);
       const clips = clipFeeds[camera.id] || [];
+      const labels = [...new Set(clips.flatMap((clip) => clip.objectLabels || []))].sort();
+      const activeFilter = state.objectFilter || "all";
+      const filteredClips = activeFilter === "all"
+        ? clips
+        : activeFilter === "objects"
+          ? clips.filter((clip) => (clip.objectLabels || []).length || Number(clip.objects || 0) > 0)
+          : clips.filter((clip) => (clip.objectLabels || []).includes(activeFilter));
       const archiveDate = state.archiveDate || dateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
-      const visibleLimit = Math.min(clips.length, state.visibleLimit || CLIP_RENDER_INITIAL);
-      const visibleClips = clips.slice(0, visibleLimit);
+      const visibleLimit = Math.min(filteredClips.length, state.visibleLimit || CLIP_RENDER_INITIAL);
+      const visibleClips = filteredClips.slice(0, visibleLimit);
+      const visibleEntries = visibleClips.map((clip) => ({ clip, index: clips.indexOf(clip) }));
       const status = state.status || `${clips.length} clips`;
-      const displayStatus = clips.length > visibleLimit ? `${status} · showing ${visibleLimit}` : status;
+      const filterStatus = activeFilter === "all" ? status : `${filteredClips.length} ${activeFilter.replace("_", " ")} clips`;
+      const displayStatus = filteredClips.length > visibleLimit ? `${filterStatus} · showing ${visibleLimit}` : filterStatus;
       const archiveTools = state.archiveOpen
         ? `<div class="archiveSearch">
             <button class="archiveButton secondary" type="button" data-archive-prev>Prev Day</button>
@@ -2505,17 +2543,27 @@
             <button class="archiveButton" type="button" data-archive-search>Search</button>
           </div>`
         : "";
+      const filterTools = labels.length
+        ? `<div class="clipFilterRow">
+            ${["all", "objects", ...labels].map((label) => `
+              <button class="clipFilterButton ${activeFilter === label ? "active" : ""}" type="button" data-clip-filter="${label}">
+                ${label === "all" ? "All" : label === "objects" ? "Objects" : label.replace("_", " ")}
+              </button>
+            `).join("")}
+          </div>`
+        : "";
       const header = `
         <div class="clipFeedHeader ${state.archiveOpen ? "" : "compact"}">
           ${archiveTools}
+          ${filterTools}
           <span class="clipFeedStatus">${state.loading ? "Loading..." : displayStatus}</span>
         </div>
       `;
-      if (!clips.length) {
+      if (!filteredClips.length) {
         return `
           <div class="clipFeedPanel">
             ${header}
-            <section class="captureFeed"><article class="captureItem"><div></div><div><strong>${state.loading ? "Loading recordings" : "No clips found"}</strong><span>${state.mode === "archive" ? "Try another archive date" : "Waiting for recent motion clips from Frigate"}</span></div></article></section>
+            <section class="captureFeed"><article class="captureItem"><div></div><div><strong>${state.loading ? "Loading recordings" : "No clips found"}</strong><span>${activeFilter === "all" ? (state.mode === "archive" ? "Try another archive date" : "Waiting for recent motion clips from Frigate") : "No clips match this label"}</span></div></article></section>
           </div>
         `;
       }
@@ -2523,7 +2571,7 @@
         <div class="clipFeedPanel">
           ${header}
           <section class="captureFeed" aria-label="${camera.name} recent clips">
-            ${visibleClips.map((clip, index) => {
+            ${visibleEntries.map(({ clip, index }) => {
               const playable = Boolean(clip.url || clip.eventId);
               return renderFeedItem({
                 imageClass: rotationClass(camera),
@@ -2535,7 +2583,7 @@
                 playable
               });
             }).join("")}
-            ${clips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${clips.length - visibleLimit})</button>` : ""}
+            ${filteredClips.length > visibleLimit ? `<button class="captureMoreButton" type="button" data-clip-more>More Clips (${filteredClips.length - visibleLimit})</button>` : ""}
           </section>
         </div>
       `;
@@ -2767,8 +2815,20 @@
       const moreButton = event.target.closest("[data-clip-more]");
       if (moreButton && selected?.kind === "house") {
         const state = clipState(selected);
-        const clips = clipFeeds[selected.id] || [];
+        const clips = (clipFeeds[selected.id] || []).filter((clip) => {
+          if ((state.objectFilter || "all") === "all") return true;
+          if (state.objectFilter === "objects") return (clip.objectLabels || []).length || Number(clip.objects || 0) > 0;
+          return (clip.objectLabels || []).includes(state.objectFilter);
+        });
         state.visibleLimit = Math.min(clips.length, (state.visibleLimit || CLIP_RENDER_INITIAL) + CLIP_RENDER_STEP);
+        openDetail(selected.id);
+        return;
+      }
+      const filterButton = event.target.closest("[data-clip-filter]");
+      if (filterButton && selected?.kind === "house") {
+        const state = clipState(selected);
+        state.objectFilter = filterButton.dataset.clipFilter || "all";
+        state.visibleLimit = CLIP_RENDER_INITIAL;
         openDetail(selected.id);
         return;
       }
